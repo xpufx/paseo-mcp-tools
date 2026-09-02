@@ -21,6 +21,14 @@ Provides an inline UI for checking MCP servers available to an agent session wit
 | **Claude** (`claude`) | User `~/.claude.json` / project `.claude.json` heuristics | **Tested against real active configs** *(without live subscription session)* |
 | **CodeX** (`codex`) | Global `~/.codex/config.toml` / project `.codex/config.toml` | **Provided as-is** *(without guarantees)* |
 
+## Dropping in New Providers
+
+Adding a new tool/CLI probe (e.g. Cursor, Windsurf, Zed, Roo, Cline) is black-box and takes 2 simple steps:
+1. Create `providers/<id>.server.ts` declaring candidate config paths using `discoverFromCandidates()`.
+2. Add your probe to `providers/registry.server.ts`.
+
+See the complete step-by-step guide in the [write-mcp-provider skill](.agents/skills/write-mcp-provider/SKILL.md) (`.agents/skills/write-mcp-provider/SKILL.md`). Run `npm test` to automatically verify the probe satisfies the contract.
+
 ## Layout
 
 | File | Owns |
