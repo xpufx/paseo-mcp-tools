@@ -386,65 +386,48 @@ function McpModal({
             {loadingDetail ? (
               <ActivityIndicator color={theme.colors.foregroundMuted} />
             ) : detail ? (
-              <ScrollView
-                style={{ maxHeight: 480 }}
-                contentContainerStyle={{ flexGrow: 1, paddingBottom: 60 }}
-                nestedScrollEnabled
-                showsVerticalScrollIndicator
-                keyboardShouldPersistTaps="handled"
-              >
+              <View style={{ gap: 12 }}>
                 <Text style={{ color: theme.colors.foreground, fontSize: 16, fontWeight: "600" }}>{servers.find((s) => s.id === selected)?.name ?? selected}</Text>
-                <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, marginTop: 4 }}>{detail.path}</Text>
-                <Pressable onPress={() => void copy(detail.path)} style={{ marginTop: 4 }}>
+                <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, marginTop: -6 }}>{detail.path}</Text>
+                <Pressable onPress={() => void copy(detail.path)}>
                   <Text style={{ color: theme.colors.accent, fontSize: 12 }}>Copy path</Text>
                 </Pressable>
                 {healthLoading ? (
-                  <View style={{ marginTop: 12, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <View style={{ marginTop: 8, flexDirection: "row", alignItems: "center", gap: 8 }}>
                     <ActivityIndicator size="small" color={theme.colors.foregroundMuted} />
                     <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>Checking health…</Text>
                   </View>
                 ) : health ? (
-                  <View style={{ marginTop: 12, gap: 8, padding: 10, backgroundColor: theme.colors.foregroundMuted + "10", borderRadius: 8 }}>
+                  <View style={{ marginTop: 8, gap: 10, padding: 12, backgroundColor: theme.colors.foregroundMuted + "10", borderRadius: 8 }}>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                      <Text style={{ color: theme.colors.foreground, fontSize: 12, fontWeight: "600" }}>
+                      <Text style={{ color: theme.colors.foreground, fontSize: 13, fontWeight: "700" }}>
                         {health.status.toUpperCase()} · {health.latencyMs}ms · {health.toolCount ?? "?"} tools
                       </Text>
                       {health.error ? <Text style={{ color: theme.colors.statusDanger, fontSize: 11 }}>{health.error.slice(0, 120)}</Text> : null}
                     </View>
                     {health.instructions ? (
-                      <View style={{ borderWidth: 1, borderColor: theme.colors.foregroundMuted + "20", borderRadius: 6, padding: 8, backgroundColor: theme.colors.foregroundMuted + "08" }}>
-                        <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontWeight: "700", textTransform: "uppercase", marginBottom: 4 }}>Instructions</Text>
-                        <ScrollView
-                          style={{ maxHeight: 130 }}
-                          nestedScrollEnabled
-                          showsVerticalScrollIndicator
-                          contentContainerStyle={{ flexGrow: 1 }}
-                        >
-                          <Text selectable style={{ color: theme.colors.foreground, fontSize: 12, lineHeight: 16 }}>{health.instructions}</Text>
-                        </ScrollView>
+                      <View style={{ borderWidth: 1, borderColor: theme.colors.foregroundMuted + "20", borderRadius: 6, padding: 10, backgroundColor: theme.colors.foregroundMuted + "08" }}>
+                        <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontWeight: "700", textTransform: "uppercase", marginBottom: 6 }}>Instructions</Text>
+                        <Text selectable style={{ color: theme.colors.foreground, fontSize: 12, lineHeight: 18 }}>{health.instructions}</Text>
                       </View>
                     ) : null}
                     {health.tools && health.tools.length > 0 ? (
-                      <View style={{ borderWidth: 1, borderColor: theme.colors.foregroundMuted + "20", borderRadius: 6, padding: 8, backgroundColor: theme.colors.foregroundMuted + "08" }}>
-                        <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontWeight: "700", textTransform: "uppercase", marginBottom: 4 }}>
+                      <View style={{ borderWidth: 1, borderColor: theme.colors.foregroundMuted + "20", borderRadius: 6, padding: 10, backgroundColor: theme.colors.foregroundMuted + "08" }}>
+                        <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontWeight: "700", textTransform: "uppercase", marginBottom: 6 }}>
                           Available Tools ({health.tools.length})
                         </Text>
-                        <ScrollView
-                          style={{ maxHeight: 110 }}
-                          nestedScrollEnabled
-                          showsVerticalScrollIndicator
-                          contentContainerStyle={{ flexGrow: 1 }}
-                        >
-                          <Text selectable style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontFamily: "monospace", lineHeight: 15 }}>
-                            {health.tools.join(", ")}
-                          </Text>
-                        </ScrollView>
+                        <Text selectable style={{ color: theme.colors.foregroundMuted, fontSize: 12, fontFamily: "monospace", lineHeight: 18 }}>
+                          {health.tools.join(", ")}
+                        </Text>
                       </View>
                     ) : null}
                   </View>
                 ) : null}
-                <Text selectable style={{ color: theme.colors.foregroundMuted, fontSize: 12, marginTop: 12, fontFamily: "monospace" }}>{detail.redacted.slice(0, 4000)}</Text>
-              </ScrollView>
+                <View style={{ marginTop: 6, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", borderRadius: 6, padding: 10, backgroundColor: theme.colors.foregroundMuted + "04" }}>
+                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontWeight: "700", textTransform: "uppercase", marginBottom: 6 }}>Configuration</Text>
+                  <Text selectable style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontFamily: "monospace", lineHeight: 16 }}>{detail.redacted.slice(0, 4000)}</Text>
+                </View>
+              </View>
             ) : (
               <Text style={{ color: theme.colors.foregroundMuted }}>No detail</Text>
             )}
