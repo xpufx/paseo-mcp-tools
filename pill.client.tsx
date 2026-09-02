@@ -362,7 +362,11 @@ function McpModal({
                         <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontWeight: "600", textTransform: "uppercase", marginBottom: 4 }}>Instructions</Text>
                         <Text style={{ color: theme.colors.foreground, fontSize: 12, lineHeight: 16 }}>{health.instructions}</Text>
                       </View>
-                    ) : null}
+                    ) : (
+                      <View style={{ marginTop: 6, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", borderRadius: 6, padding: 8, backgroundColor: theme.colors.foregroundMuted + "04" }}>
+                        <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontStyle: "italic" }}>No custom instructions provided by server</Text>
+                      </View>
+                    )}
                     {health.tools && health.tools.length > 0 ? (
                       <View style={{ marginTop: 6, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", borderRadius: 6, padding: 8, backgroundColor: theme.colors.foregroundMuted + "06" }}>
                         <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontWeight: "600", textTransform: "uppercase", marginBottom: 4 }}>
@@ -372,7 +376,13 @@ function McpModal({
                           {health.tools.join(", ")}
                         </Text>
                       </View>
-                    ) : null}
+                    ) : (
+                      <View style={{ marginTop: 6, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", borderRadius: 6, padding: 8, backgroundColor: theme.colors.foregroundMuted + "04" }}>
+                        <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontStyle: "italic" }}>
+                          {health.toolCount === 0 ? "Server exports 0 tools" : "No tools listed"}
+                        </Text>
+                      </View>
+                    )}
                   </View>
                 ) : null}
                 <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, marginTop: 12, fontFamily: "monospace" }}>{detail.redacted.slice(0, 4000)}</Text>
