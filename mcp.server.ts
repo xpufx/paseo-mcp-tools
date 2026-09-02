@@ -6,7 +6,8 @@ import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import type { McpServerSchema } from "./mcp.shared";
 import { z } from "zod";
 import { probeForProvider } from "./providers/registry.server";
-import { checkMany, checkMcpServerHealth } from "./providers/health.server";
+// Bundled health — SDK inlined so `paseo plugin add` doesn't need to resolve @modelcontextprotocol/sdk
+import { checkMany, checkMcpServerHealth } from "./providers/health.bundled.mjs";
 
 type McpServer = z.infer<typeof McpServerSchema>;
 
