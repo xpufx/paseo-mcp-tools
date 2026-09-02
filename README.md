@@ -1,5 +1,9 @@
 # paseo-mcp-tools plugin
 
+<p align="center">
+  <img src="screenshots/paseo-mcp-tools-mobile.jpg" width="40%" alt="paseo-mcp-tools on mobile" />
+</p>
+
 Provides an inline UI for checking MCP servers available to an agent session with additional functionality per MCP. Uses the most authoritative list per provider CLI and verifies actual session inclusion with live probes.
 
 (**Paseo** is an agent orchestrator: AI coding agents run on paseo daemons, each managing workspaces, tools, and permissions.)
