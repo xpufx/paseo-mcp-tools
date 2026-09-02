@@ -2,7 +2,7 @@
 
 Provides an inline UI for checking MCP servers available to an agent session with additional functionality per MCP. Uses the most authoritative list per provider CLI and verifies actual session inclusion with live probes.
 
-(paseo is an agent orchestrator: AI coding agents run on paseo daemons, each managing workspaces, tools, and permissions.)
+(**Paseo** is an agent orchestrator: AI coding agents run on paseo daemons, each managing workspaces, tools, and permissions.)
 
 ## What it does
 
