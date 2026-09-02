@@ -1,74 +1,7 @@
-import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { McpProbe, McpServer, ProbeContext } from "./types.server";
-
-function redact(text: string): string {
-  return text
-    .replace(/"([^"]*(?:token|secret|key|password|auth)[^"]*)"\s*:\s*"[^"]*"/gi, '"$1": "•••"')
-    .replace(/(token|secret|key|password|auth)=[^\s"']+/gi, "$1=•••");
-}
-
-function safeParseJson(raw: string): Record<string, unknown> | null {
-  // 1. Try native fast parse first (works for all standard JSON including URLs with http:// or https://)
-  try {
-    return JSON.parse(raw) as Record<string, unknown>;
-  } catch {}
-
-  // 2. Fallback: sanitize trailing commas and comments (avoiding string literals)
-  try {
-    // Strip trailing commas before closing braces/brackets
-    const withoutTrailingCommas = raw.replace(/,\s*([}\]])/g, "$1");
-    return JSON.parse(withoutTrailingCommas) as Record<string, unknown>;
-  } catch {}
-
-  // 3. Fallback: line-by-line comment stripper (only lines where // is outside quotes)
-  try {
-    const lines = raw.split("\n").map((line) => {
-      const trimmed = line.trim();
-      if (trimmed.startsWith("//") || trimmed.startsWith("/*")) return "";
-      return line;
-    });
-    return JSON.parse(lines.join("\n").replace(/,\s*([}\]])/g, "$1")) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
-async function readServers(filePath: string): Promise<Record<string, unknown>> {
-  if (!existsSync(filePath)) return {};
-  try {
-    const raw = await readFile(filePath, "utf8");
-    const parsed = safeParseJson(raw);
-    if (!parsed) return {};
-    const mcp = (parsed.mcpServers ?? parsed["mcp-servers"] ?? {}) as Record<string, unknown>;
-    if (!mcp || typeof mcp !== "object" || Array.isArray(mcp)) return {};
-    return mcp;
-  } catch {
-    return {};
-  }
-}
-
-function toMcpServer(name: string, defRaw: unknown, sourcePath: string, sourceLabel: string): McpServer | null {
-  if (!defRaw || typeof defRaw !== "object") return null;
-  const def = defRaw as Record<string, unknown>;
-  if (def.disabled === true) return null;
-  const url = typeof def.url === "string" ? def.url : null;
-  const command = typeof def.command === "string" ? def.command : null;
-  const socket = typeof def.socket === "string" ? def.socket : null;
-  return {
-    id: `session:pi:${name}`,
-    name,
-    transport: url ? "http" : command || socket ? "stdio" : "unknown",
-    source: { kind: "session", label: sourceLabel, path: sourcePath },
-    command: command ?? socket,
-    url,
-    description: url ?? command ?? socket ?? "",
-    hasSecrets: Boolean(def.env || def.headers || def.bearerToken || def.auth),
-    configPreview: redact(JSON.stringify(def, null, 2)),
-  };
-}
+import { discoverFromCandidates } from "./extract.server";
+import type { McpProbe, ProbeContext } from "./types.server";
 
 export const piProbe: McpProbe = {
   id: "pi",
@@ -81,7 +14,7 @@ export const piProbe: McpProbe = {
       : null;
 
     // Precedence: lower index = base default, higher index = override wins
-    const candidates: Array<{ path: string; label: string }> = [
+    return discoverFromCandidates("pi", [
       { path: path.join(home, ".config", "mcp", "mcp.json"), label: "pi · global shared" },
       { path: path.join(home, ".agents", "mcp.json"), label: "pi · agents global" },
       { path: path.join(home, ".agents", "mcp", "mcp.json"), label: "pi · agents nested" },
@@ -98,22 +31,6 @@ export const piProbe: McpProbe = {
       { path: path.join(ctx.cwd, ".mcp.json"), label: "pi · project shared" },
       { path: path.join(ctx.cwd, ".pi", "mcp.json"), label: "pi · project override" },
       { path: path.join(ctx.cwd, ".pi", ".mcp.json"), label: "pi · project override" },
-    ];
-
-    const merged = new Map<string, { def: unknown; source: (typeof candidates)[number] }>();
-    for (const cand of candidates) {
-      const servers = await readServers(cand.path);
-      for (const [name, def] of Object.entries(servers)) {
-        merged.set(name, { def, source: cand });
-      }
-    }
-
-    const servers: McpServer[] = [];
-    for (const [name, { def, source }] of merged) {
-      const s = toMcpServer(name, def, source.path, source.label);
-      if (s) servers.push(s);
-    }
-
-    return { servers, error: null };
+    ]);
   },
 };

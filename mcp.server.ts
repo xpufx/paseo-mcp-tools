@@ -66,12 +66,41 @@ async function findStoredRecord(agentId: string): Promise<Record<string, unknown
   return null;
 }
 
+// Cache provider probe results keyed by `provider:cwd` to avoid redundant
+// filesystem inspections and CLI process spawns when multiple agents share the same project/tool.
+const PROBE_CACHE_TTL_MS = 60_000; // 1 minute TTL
+const probeCache = new Map<string, { timestamp: number; result: { servers: McpServer[]; error: string | null } }>();
+
+async function getCachedProviderProbe(agentId: string, provider: string, cwd: string, bypassCache = false) {
+  const cacheKey = `${provider}:${cwd}`;
+  const now = Date.now();
+  const cached = probeCache.get(cacheKey);
+
+  if (!bypassCache && cached && now - cached.timestamp < PROBE_CACHE_TTL_MS) {
+    return cached.result;
+  }
+
+  const probe = probeForProvider(provider);
+  if (!probe) {
+    return { servers: [], error: null };
+  }
+
+  const res = await probe.probe({ agentId, provider, cwd });
+  const result = { servers: res.servers, error: res.error ?? null };
+  probeCache.set(cacheKey, { timestamp: now, result });
+  return result;
+}
+
 /**
  * Live servers for THIS agent only.
  * 1) Paseo-injected `mcpServers` from StoredAgentRecord (session-scoped custom servers)
- * 2) Provider-specific live probe — entire logic lives in providers/<id>.server.ts, selected via registry
+ * 2) Provider-specific live probe — cached by `provider:cwd` across concurrent agents
  */
-export async function discoverLiveServers(agentId: string, context: PluginHandlerContext): Promise<{ servers: McpServer[]; error: string | null }> {
+export async function discoverLiveServers(
+  agentId: string,
+  context: PluginHandlerContext,
+  options: { bypassCache?: boolean } = {},
+): Promise<{ servers: McpServer[]; error: string | null }> {
   const agent = await loadAgent(agentId, context);
   const servers: McpServer[] = [];
   let error: string | null = null;
@@ -98,15 +127,12 @@ export async function discoverLiveServers(agentId: string, context: PluginHandle
       });
     }
 
-    const probe = probeForProvider(agent.provider);
-    if (probe) {
-      const result = await probe.probe({ agentId, provider: agent.provider, cwd: agent.cwd });
-      for (const s of result.servers) {
-        if (servers.some((existing) => existing.name === s.name)) continue;
-        servers.push(s);
-      }
-      if (result.error) error = result.error;
+    const probeResult = await getCachedProviderProbe(agentId, agent.provider, agent.cwd, options.bypassCache);
+    for (const s of probeResult.servers) {
+      if (servers.some((existing) => existing.name === s.name)) continue;
+      servers.push(s);
     }
+    if (probeResult.error) error = probeResult.error;
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }

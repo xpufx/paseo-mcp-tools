@@ -12,17 +12,27 @@ Provides an inline UI for checking MCP servers available to an agent session wit
 - **Search** filters servers + tools client-side.
 - **Detail** tap → `mcp.read` (redacted) + live `mcp.health` → `instructions` + `tools` via generic health client.
 
+## Supported Providers
+
+| Provider | Probe Mechanism | Status |
+|---|---|---|
+| **OpenCode** (`opencode`) | Live `opencode mcp list` daemon CLI command + config | **Fully tested & verified** |
+| **Pi** (`pi`) | User canonical `~/.pi/.mcp.json` / project overrides + heuristics | **Fully tested & verified** |
+| **Claude** (`claude`) | User `~/.claude.json` / project `.claude.json` heuristics | **Tested against real active configs** *(without live subscription session)* |
+| **CodeX** (`codex`) | Global `~/.codex/config.toml` / project `.codex/config.toml` | **Provided as-is** *(without guarantees)* |
+
 ## Layout
 
 | File | Owns |
 |---|---|
-| `index.ts` | Wiring only — `handle(mcp.list)`, `handle(mcp.read)`, `handle(mcp.health)`, `addClientSide` |
-| `mcp.shared.ts` | zod RPC contracts |
-| `mcp.server.ts` | `discoverLiveServers()` + PASEO_TOOLS, handlers |
+| `index.ts` | Wiring only — `handle(mcp.list)`, `handle(mcp.read)`, `handle(mcp.health)`, `handle(mcp.diagnose)`, `addClientSide` |
+| `mcp.shared.ts` | zod RPC contracts & shared types (client/server boundary safe) |
+| `mcp.server.ts` | `discoverLiveServers()` (with `${provider}:${cwd}` cache) + handlers |
+| `providers/extract.server.ts` | Universal heuristic MCP parser (JSON/JSONC, comments, trailing commas, URL safe) |
 | `providers/<id>.server.ts` | Per-CLI live probe — isolated, contract `McpProbe` |
 | `health/health.server.ts` | Generic `Client` health (stdio/http) — `instructions` + `tools` |
 | `mcp-query.client.tsx` | `useMcpQuery` shared pill/modal, 30m timer + manual Refresh |
-| `pill.client.tsx` | Pill + `McpModal` (search, Last check, Refresh, detail, collapsed Paseo) |
+| `pill.client.tsx` | Pill + `McpModal` (search, Last check, Refresh, Diagnose, detail, collapsed Paseo) |
 
 ## Install
 
