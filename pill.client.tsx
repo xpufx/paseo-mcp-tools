@@ -180,6 +180,7 @@ function McpModal({
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
               <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>
                 {lastCheck ? `Last check ${lastCheck}` : "Never checked"}
+                {query.data?.provider ? ` · provider: ${query.data.provider}` : ""}
                 {query.isFetching ? " • checking…" : ""}
               </Text>
               <Pressable
@@ -323,7 +324,7 @@ export function contributeClient(client: PluginClientContext) {
     pills.set(
       agentId,
       client.addComposerPill({
-        id: "mcp-monitor",
+        id: "mcp-tools",
         title: "MCP",
         workspaceId,
         agentId,
@@ -358,7 +359,7 @@ export function contributeClient(client: PluginClientContext) {
         if (agent.workspaceId) addPill(agent.id, agent.workspaceId);
       });
     })
-    .catch((e) => console.error("mcp-monitor: seed pills failed", e));
+    .catch((e) => console.error("mcp-tools: seed pills failed", e));
 
   return () => {
     unsubscribe();

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { checkMcpServerHealth } from "./health.server";
-import type { McpServer } from "./types.server";
+import type { McpServer } from "../providers/types.server";
 
 describe("generic health client — works with every MCP without being a server", () => {
   it("returns unknown for unknown transport", async () => {

@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { McpServer } from "./types.server";
+import type { McpServer } from "../providers/types.server";
 
 // GTD: generic health check that works with *every* MCP.
 // This is a CLIENT — we are not an MCP server, we just dial MCP servers.

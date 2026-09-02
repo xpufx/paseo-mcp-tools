@@ -20,7 +20,7 @@ Provides an inline UI for checking MCP servers available to an agent session wit
 | `mcp.shared.ts` | zod RPC contracts |
 | `mcp.server.ts` | `discoverLiveServers()` + PASEO_TOOLS, handlers |
 | `providers/<id>.server.ts` | Per-CLI live probe — isolated, contract `McpProbe` |
-| `providers/health.server.ts` | Generic `Client` health (stdio/http) — `instructions` + `tools` |
+| `health/health.server.ts` | Generic `Client` health (stdio/http) — `instructions` + `tools` |
 | `mcp-query.client.tsx` | `useMcpQuery` shared pill/modal, 30m timer + manual Refresh |
 | `pill.client.tsx` | Pill + `McpModal` (search, Last check, Refresh, detail, collapsed Paseo) |
 
@@ -31,7 +31,7 @@ Provides an inline UI for checking MCP servers available to an agent session wit
 paseo plugin install "$PWD"
 
 # or from git
-paseo plugin add xpufx/paseo-mcp-monitor
+paseo plugin add xpufx/paseo-mcp-tools
 ```
 
-`pluginsEnabled: true` required. `paseo plugin reload mcp-monitor` after edits; `paseo plugin logs mcp-monitor` for errors. Failed reload stays failed (Paseo doesn't restore).
+`pluginsEnabled: true` required. `paseo plugin reload mcp-tools` after edits; `paseo plugin logs mcp-tools` for errors. Failed reload stays failed (Paseo doesn't restore).
