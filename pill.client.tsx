@@ -332,9 +332,38 @@ function McpModal({
           </View>
         ) : selected ? (
           <View style={{ gap: 12, padding: 16 }}>
-            <Pressable onPress={() => { setSelected(null); setDetail(null); }}>
-              <Text style={{ color: theme.colors.accent }}>← Back to list</Text>
-            </Pressable>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <Pressable onPress={() => { setSelected(null); setDetail(null); }}>
+                <Text style={{ color: theme.colors.accent }}>← Back to list</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  const debugPayload = {
+                    platform: Platform.OS,
+                    selected,
+                    server: servers.find((s) => s.id === selected),
+                    health,
+                    healthLoading,
+                    detailPath: detail?.path,
+                    hasHealthMapEntry: Boolean(healthMap.get(selected)),
+                    rawHealthMapEntry: healthMap.get(selected),
+                  };
+                  void copy(JSON.stringify(debugPayload, null, 2));
+                }}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 4,
+                  paddingHorizontal: 8,
+                  paddingVertical: 4,
+                  borderRadius: 6,
+                  backgroundColor: theme.colors.foregroundMuted + "14",
+                }}
+              >
+                <Icon name="Copy" size={11} color={theme.colors.foregroundMuted} />
+                <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>Copy Debug</Text>
+              </Pressable>
+            </View>
             {loadingDetail ? (
               <ActivityIndicator color={theme.colors.foregroundMuted} />
             ) : detail ? (
