@@ -249,7 +249,7 @@ function McpModal({
                 <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>Running host diagnostics…</Text>
               </View>
             ) : diagnosticData ? (
-              <OuterScroll style={{ maxHeight: 420 }}>
+              <View style={{ gap: 12 }}>
                 <View style={{ gap: 4, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: theme.colors.foregroundMuted + "18" }}>
                   <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
                     <Text style={{ color: theme.colors.foreground, fontSize: 14, fontWeight: "600" }}>Probe Diagnostic Report</Text>
@@ -282,7 +282,7 @@ function McpModal({
                   ) : null}
                 </View>
 
-                <View style={{ marginTop: 12, gap: 10 }}>
+                <View style={{ gap: 10 }}>
                   <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, textTransform: "uppercase" }}>Checked Paths & Targets</Text>
                   {diagnosticData.steps.map((step, idx) => (
                     <View
@@ -329,6 +329,7 @@ function McpModal({
                       <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, marginTop: 2 }}>{step.details}</Text>
                       {step.contentPreview ? (
                         <Text
+                          selectable
                           style={{
                             color: theme.colors.foregroundMuted,
                             fontSize: 10,
@@ -346,7 +347,7 @@ function McpModal({
                     </View>
                   ))}
                 </View>
-              </OuterScroll>
+              </View>
             ) : null}
           </View>
         ) : selected ? (
@@ -495,7 +496,7 @@ function McpModal({
             ) : query.isError ? (
               <Text style={{ color: theme.colors.statusDanger }}>{(query.error as Error).message}</Text>
             ) : (
-              <OuterScroll style={{ maxHeight: 380 }}>
+              <View>
                 {servers.length === 0 && paseoTools.length === 0 ? (
                   <Text style={{ color: theme.colors.foregroundMuted }}>{term ? "No matches." : "No MCP servers found."}</Text>
                 ) : null}
@@ -572,7 +573,7 @@ function McpModal({
                       ))
                     : null}
                 </View>
-              </OuterScroll>
+              </View>
             )}
           </View>
         )}
