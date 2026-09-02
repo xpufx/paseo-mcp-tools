@@ -111,6 +111,59 @@ function McpModal({
       .finally(() => setHealthLoading(false));
   }, [selected, agentId, callHealth]);
 
+  const [healthMap, setHealthMap] = useState<Map<string, { status: "healthy" | "degraded" | "down" | "unknown"; latencyMs: number; toolCount: number | null; error: string | null }>>(new Map());
+  const [healthMapLoading, setHealthMapLoading] = useState(false);
+
+  // Background health check across all discovered servers when modal is open or data refreshes
+  useEffect(() => {
+    if (!open || !query.data?.servers || query.data.servers.length === 0) return;
+    let active = true;
+    setHealthMapLoading(true);
+    callHealth({ agentId })
+      .then((res) => {
+        if (!active || !res?.results) return;
+        const map = new Map<string, { status: "healthy" | "degraded" | "down" | "unknown"; latencyMs: number; toolCount: number | null; error: string | null }>();
+        for (const r of res.results) {
+          map.set(r.serverId, { status: r.status, latencyMs: r.latencyMs, toolCount: r.toolCount, error: r.error });
+          map.set(r.name, { status: r.status, latencyMs: r.latencyMs, toolCount: r.toolCount, error: r.error });
+        }
+        setHealthMap(map);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setHealthMapLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [open, agentId, query.dataUpdatedAt, callHealth]);
+
+  const getStatusColor = (status?: "healthy" | "degraded" | "down" | "unknown") => {
+    switch (status) {
+      case "healthy":
+        return theme.colors.statusSuccess;
+      case "degraded":
+        return theme.colors.statusWarning;
+      case "down":
+        return theme.colors.statusDanger;
+      default:
+        return theme.colors.foregroundMuted;
+    }
+  };
+
+  const getStatusDot = (status?: "healthy" | "degraded" | "down" | "unknown") => {
+    switch (status) {
+      case "healthy":
+        return "●";
+      case "degraded":
+        return "●";
+      case "down":
+        return "●";
+      default:
+        return "○";
+    }
+  };
+
   const copy = async (value: string) => {
     if (typeof navigator !== "undefined" && (navigator as unknown as { clipboard?: { writeText: (s: string) => Promise<void> } }).clipboard) {
       try {
@@ -401,24 +454,46 @@ function McpModal({
                 {groupedServers.map(([label, items]) => (
                   <View key={label} style={{ marginTop: 12 }}>
                     <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, textTransform: "uppercase", marginBottom: 6 }}>{label}</Text>
-                    {items.map((s) => (
-                      <Pressable
-                        key={s.id}
-                        onPress={() => void openDetail(s.id)}
-                        style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: theme.colors.foregroundMuted + "18" }}
-                      >
-                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                          <Text style={{ color: theme.colors.foreground, fontWeight: "600" }}>{s.name}</Text>
-                          <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, backgroundColor: theme.colors.foregroundMuted + "18", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
-                            {s.transport}
+                    {items.map((s) => {
+                      const h = healthMap.get(s.id) ?? healthMap.get(s.name);
+                      const statusColor = getStatusColor(h?.status);
+                      const statusDot = getStatusDot(h?.status);
+
+                      return (
+                        <Pressable
+                          key={s.id}
+                          onPress={() => void openDetail(s.id)}
+                          style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: theme.colors.foregroundMuted + "18" }}
+                        >
+                          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1 }}>
+                              <Text style={{ color: statusColor, fontSize: 13, lineHeight: 14 }}>{statusDot}</Text>
+                              <Text style={{ color: theme.colors.foreground, fontWeight: "600" }}>{s.name}</Text>
+                              <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, backgroundColor: theme.colors.foregroundMuted + "18", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+                                {s.transport}
+                              </Text>
+                              {s.hasSecrets ? <Icon name="KeyRound" size={12} color={theme.colors.foregroundMuted} /> : null}
+                            </View>
+
+                            {h ? (
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                                <Text style={{ color: statusColor, fontSize: 11, fontWeight: "600", textTransform: "uppercase" }}>
+                                  {h.status}
+                                </Text>
+                                <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>
+                                  {h.latencyMs}ms{h.toolCount !== null ? ` · ${h.toolCount} tools` : ""}
+                                </Text>
+                              </View>
+                            ) : healthMapLoading ? (
+                              <ActivityIndicator size="small" color={theme.colors.foregroundMuted} />
+                            ) : null}
+                          </View>
+                          <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, marginTop: 2 }} numberOfLines={2}>
+                            {s.description || s.command || s.url || "—"}
                           </Text>
-                          {s.hasSecrets ? <Icon name="KeyRound" size={12} color={theme.colors.foregroundMuted} /> : null}
-                        </View>
-                        <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, marginTop: 2 }} numberOfLines={2}>
-                          {s.description || s.command || s.url || "—"}
-                        </Text>
-                      </Pressable>
-                    ))}
+                        </Pressable>
+                      );
+                    })}
                   </View>
                 ))}
                 {query.data?.cwd ? (
