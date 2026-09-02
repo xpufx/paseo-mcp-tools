@@ -408,7 +408,7 @@ function McpModal({
                     {health.instructions ? (
                       <View style={{ marginTop: 6, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", borderRadius: 6, padding: 8, backgroundColor: theme.colors.foregroundMuted + "06" }}>
                         <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontWeight: "600", textTransform: "uppercase", marginBottom: 4 }}>Instructions</Text>
-                        <Text style={{ color: theme.colors.foreground, fontSize: 12, lineHeight: 16 }}>{health.instructions}</Text>
+                        <Text selectable style={{ color: theme.colors.foreground, fontSize: 12, lineHeight: 16 }}>{health.instructions}</Text>
                       </View>
                     ) : (
                       <View style={{ marginTop: 6, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", borderRadius: 6, padding: 8, backgroundColor: theme.colors.foregroundMuted + "04" }}>
@@ -420,7 +420,7 @@ function McpModal({
                         <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontWeight: "600", textTransform: "uppercase", marginBottom: 4 }}>
                           Available Tools ({health.tools.length})
                         </Text>
-                        <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontFamily: "monospace", lineHeight: 15 }}>
+                        <Text selectable style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontFamily: "monospace", lineHeight: 15 }}>
                           {health.tools.join(", ")}
                         </Text>
                       </View>
@@ -433,7 +433,22 @@ function McpModal({
                     )}
                   </View>
                 ) : null}
-                <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, marginTop: 12, fontFamily: "monospace" }}>{detail.redacted.slice(0, 4000)}</Text>
+                <View style={{ marginTop: 12, padding: 8, borderRadius: 6, backgroundColor: theme.colors.foregroundMuted + "08", borderWidth: 1, borderColor: theme.colors.foregroundMuted + "14" }}>
+                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 10, fontWeight: "700", textTransform: "uppercase", marginBottom: 4 }}>
+                    Debug Info (State Snapshot)
+                  </Text>
+                  <Text selectable style={{ color: theme.colors.foregroundMuted, fontSize: 10, fontFamily: "monospace" }}>
+                    {JSON.stringify({
+                      status: health?.status ?? "null",
+                      hasHealth: Boolean(health),
+                      healthLoading,
+                      instructionsLength: health?.instructions?.length ?? 0,
+                      toolsLength: health?.tools?.length ?? 0,
+                      hasMap: Boolean(healthMap.get(selected)),
+                    }, null, 2)}
+                  </Text>
+                </View>
+                <Text selectable style={{ color: theme.colors.foregroundMuted, fontSize: 12, marginTop: 12, fontFamily: "monospace" }}>{detail.redacted.slice(0, 4000)}</Text>
               </OuterScroll>
             ) : (
               <Text style={{ color: theme.colors.foregroundMuted }}>No detail</Text>
