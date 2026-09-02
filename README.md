@@ -12,6 +12,12 @@ Provides an inline UI for checking MCP servers available to an agent session wit
 - **Search** filters servers + tools client-side.
 - **Detail** tap → `mcp.read` (redacted) + live `mcp.health` → `instructions` + `tools` via generic health client.
 
+## Screenshots
+
+| MCP Overview & Status | Server Detail & Live Health | Host Probe Diagnostics |
+| :---: | :---: | :---: |
+| <img src="screenshots/paseo-mcp-tools-main.png" width="100%" alt="MCP Servers & Tools Overview" /> | <img src="screenshots/paseo-mcp-tools-detail.png" width="100%" alt="Server Details & Health" /> | <img src="screenshots/paseo-mcp-tools-diagnosis.png" width="100%" alt="Host Diagnostics" /> |
+
 ## Supported Providers
 
 | Provider | Probe Mechanism | Status |
