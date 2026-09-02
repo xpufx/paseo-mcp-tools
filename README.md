@@ -1,11 +1,10 @@
 # paseo-mcp-tools
 
-Pill → Modal inspector for MCP — per-agent, live, no filesystem guessing.
+Provides an inline UI for checking MCP servers available to an agent session with additional functionality per MCP. Uses the most authoritative list per provider CLI and verifies actual session inclusion with live probes.
 
 ## What it does
 
 - **Pill** above the composer shows `MCP n` (live servers for that agent). Badge updates via `mcp.list`, shared between pill and modal.
-- **Modal** via `Modal` from `@getpaseo/plugin/react-native` opens on pill press — `addComposerPill` + `Modal`, per-`agentId` opener registry.
 - **Live discovery** per-CLI via isolated `providers/<id>.server.ts` (opencode → `opencode mcp list`, claude → `~/.claude.json` live, etc.) + Paseo-injected `StoredAgentRecord.mcpServers`. Groups by `source.label`, dedupes by name.
 - **Paseo catalog** collapsed at bottom (18 tools) — tap to expand.
 - **Search** filters servers + tools client-side.
