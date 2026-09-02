@@ -183,14 +183,33 @@ function McpModal({
   };
 
   const copy = async (value: string) => {
-    if (typeof navigator !== "undefined" && (navigator as unknown as { clipboard?: { writeText: (s: string) => Promise<void> } }).clipboard) {
-      try {
-        await (navigator as unknown as { clipboard: { writeText: (s: string) => Promise<void> } }).clipboard.writeText(value);
-        toast.show("Copied");
+    try {
+      // 1. Try modern navigator.clipboard
+      if (typeof navigator !== "undefined" && navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+        toast.show("Copied to clipboard");
         return;
-      } catch {}
-    }
-    toast.show("Copy not available");
+      }
+
+      // 2. Try web document.execCommand fallback
+      if (typeof document !== "undefined" && document?.createElement) {
+        const textarea = document.createElement("textarea");
+        textarea.value = value;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const success = document.execCommand("copy");
+        document.body.removeChild(textarea);
+        if (success) {
+          toast.show("Copied to clipboard");
+          return;
+        }
+      }
+    } catch {}
+
+    toast.show("Copy not available in this view");
   };
 
   const lastCheck = query.dataUpdatedAt ? new Date(query.dataUpdatedAt).toLocaleTimeString() : null;
