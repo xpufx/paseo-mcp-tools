@@ -31,7 +31,7 @@ Provides an inline UI for checking MCP servers available to an agent session wit
 paseo plugin install "$PWD"
 
 # or from git
-paseo plugin add <repo> --path paseo-mcp-monitor
+paseo plugin add xpufx/paseo-mcp-monitor
 ```
 
 `pluginsEnabled: true` required. `paseo plugin reload mcp-monitor` after edits; `paseo plugin logs mcp-monitor` for errors. Failed reload stays failed (Paseo doesn't restore).
