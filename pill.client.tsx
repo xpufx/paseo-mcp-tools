@@ -99,19 +99,18 @@ function McpModal({
     [agentId, callRead, toast],
   );
 
-  useEffect(() => {
-    if (!selected) {
-      setHealth(null);
-      return;
-    }
-    setHealthLoading(true);
-    callHealth({ agentId, serverId: selected })
-      .then((r) => setHealth(r.results[0] ?? null))
-      .catch(() => setHealth(null))
-      .finally(() => setHealthLoading(false));
-  }, [selected, agentId, callHealth]);
+  type HealthInfo = {
+    serverId: string;
+    name: string;
+    status: "healthy" | "degraded" | "down" | "unknown";
+    latencyMs: number;
+    toolCount: number | null;
+    tools: string[] | null;
+    instructions: string | null;
+    error: string | null;
+  };
 
-  const [healthMap, setHealthMap] = useState<Map<string, { status: "healthy" | "degraded" | "down" | "unknown"; latencyMs: number; toolCount: number | null; error: string | null }>>(new Map());
+  const [healthMap, setHealthMap] = useState<Map<string, HealthInfo>>(new Map());
   const [healthMapLoading, setHealthMapLoading] = useState(false);
 
   // Background health check across all discovered servers when modal is open or data refreshes
@@ -122,10 +121,10 @@ function McpModal({
     callHealth({ agentId })
       .then((res) => {
         if (!active || !res?.results) return;
-        const map = new Map<string, { status: "healthy" | "degraded" | "down" | "unknown"; latencyMs: number; toolCount: number | null; error: string | null }>();
+        const map = new Map<string, HealthInfo>();
         for (const r of res.results) {
-          map.set(r.serverId, { status: r.status, latencyMs: r.latencyMs, toolCount: r.toolCount, error: r.error });
-          map.set(r.name, { status: r.status, latencyMs: r.latencyMs, toolCount: r.toolCount, error: r.error });
+          map.set(r.serverId, r);
+          map.set(r.name, r);
         }
         setHealthMap(map);
       })
@@ -137,6 +136,25 @@ function McpModal({
       active = false;
     };
   }, [open, agentId, query.dataUpdatedAt, callHealth]);
+
+  // When opening detail view, immediately show cached health if available, or fetch
+  useEffect(() => {
+    if (!selected) {
+      setHealth(null);
+      return;
+    }
+    const cached = healthMap.get(selected);
+    if (cached) {
+      setHealth(cached);
+      setHealthLoading(false);
+      return;
+    }
+    setHealthLoading(true);
+    callHealth({ agentId, serverId: selected })
+      .then((r) => setHealth(r.results[0] ?? null))
+      .catch(() => setHealth(null))
+      .finally(() => setHealthLoading(false));
+  }, [selected, agentId, callHealth, healthMap]);
 
   const getStatusColor = (status?: "healthy" | "degraded" | "down" | "unknown") => {
     switch (status) {
