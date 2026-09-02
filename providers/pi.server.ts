@@ -10,18 +10,38 @@ function redact(text: string): string {
     .replace(/(token|secret|key|password|auth)=[^\s"']+/gi, "$1=•••");
 }
 
-function stripCommentsAndTrailingCommas(s: string): string {
-  return s
-    .replace(/\/\/.*$/gm, "")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/,\s*([}\]])/g, "$1");
+function safeParseJson(raw: string): Record<string, unknown> | null {
+  // 1. Try native fast parse first (works for all standard JSON including URLs with http:// or https://)
+  try {
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {}
+
+  // 2. Fallback: sanitize trailing commas and comments (avoiding string literals)
+  try {
+    // Strip trailing commas before closing braces/brackets
+    const withoutTrailingCommas = raw.replace(/,\s*([}\]])/g, "$1");
+    return JSON.parse(withoutTrailingCommas) as Record<string, unknown>;
+  } catch {}
+
+  // 3. Fallback: line-by-line comment stripper (only lines where // is outside quotes)
+  try {
+    const lines = raw.split("\n").map((line) => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("//") || trimmed.startsWith("/*")) return "";
+      return line;
+    });
+    return JSON.parse(lines.join("\n").replace(/,\s*([}\]])/g, "$1")) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 }
 
 async function readServers(filePath: string): Promise<Record<string, unknown>> {
   if (!existsSync(filePath)) return {};
   try {
-    const raw = stripCommentsAndTrailingCommas(await readFile(filePath, "utf8"));
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const raw = await readFile(filePath, "utf8");
+    const parsed = safeParseJson(raw);
+    if (!parsed) return {};
     const mcp = (parsed.mcpServers ?? parsed["mcp-servers"] ?? {}) as Record<string, unknown>;
     if (!mcp || typeof mcp !== "object" || Array.isArray(mcp)) return {};
     return mcp;

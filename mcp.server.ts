@@ -222,10 +222,25 @@ export function createDiagnoseMcpHandler() {
         if (exists) {
           try {
             const raw = await readFile(cp, "utf8");
+            let parseInfo = "";
+            try {
+              if (cp.endsWith(".json")) {
+                const parsed = JSON.parse(raw) as Record<string, unknown>;
+                const mcp = (parsed.mcpServers ?? parsed["mcp-servers"] ?? {}) as Record<string, unknown>;
+                const names = Object.keys(mcp);
+                parseInfo = ` · Valid JSON (${names.length} server(s): ${names.join(", ") || "none"})`;
+              } else if (cp.endsWith(".toml")) {
+                const names = [...raw.matchAll(/^\s*\[mcp_servers\.([^\]\s]+)/gm)].map((m) => m[1]);
+                parseInfo = ` · Valid TOML (${names.length} server(s): ${names.join(", ") || "none"})`;
+              }
+            } catch (syntaxErr) {
+              parseInfo = ` · ⚠️ Syntax/Parse Warning: ${syntaxErr instanceof Error ? syntaxErr.message : String(syntaxErr)}`;
+            }
+
             steps.push({
               target: cp,
               status: "found",
-              details: `File exists (${raw.length} bytes)`,
+              details: `File exists (${raw.length} bytes)${parseInfo}`,
               contentPreview: redact(raw.slice(0, 1000)),
             });
           } catch (e) {
