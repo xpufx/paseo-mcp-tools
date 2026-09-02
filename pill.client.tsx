@@ -386,7 +386,13 @@ function McpModal({
             {loadingDetail ? (
               <ActivityIndicator color={theme.colors.foregroundMuted} />
             ) : detail ? (
-              <OuterScroll style={{ maxHeight: 420 }}>
+              <ScrollView
+                style={{ maxHeight: 480 }}
+                contentContainerStyle={{ flexGrow: 1, paddingBottom: 60 }}
+                nestedScrollEnabled
+                showsVerticalScrollIndicator
+                keyboardShouldPersistTaps="handled"
+              >
                 <Text style={{ color: theme.colors.foreground, fontSize: 16, fontWeight: "600" }}>{servers.find((s) => s.id === selected)?.name ?? selected}</Text>
                 <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, marginTop: 4 }}>{detail.path}</Text>
                 <Pressable onPress={() => void copy(detail.path)} style={{ marginTop: 4 }}>
@@ -398,7 +404,7 @@ function McpModal({
                     <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>Checking health…</Text>
                   </View>
                 ) : health ? (
-                  <View style={{ marginTop: 12, gap: 6, padding: 10, backgroundColor: theme.colors.foregroundMuted + "10", borderRadius: 8 }}>
+                  <View style={{ marginTop: 12, gap: 8, padding: 10, backgroundColor: theme.colors.foregroundMuted + "10", borderRadius: 8 }}>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                       <Text style={{ color: theme.colors.foreground, fontSize: 12, fontWeight: "600" }}>
                         {health.status.toUpperCase()} · {health.latencyMs}ms · {health.toolCount ?? "?"} tools
@@ -406,50 +412,39 @@ function McpModal({
                       {health.error ? <Text style={{ color: theme.colors.statusDanger, fontSize: 11 }}>{health.error.slice(0, 120)}</Text> : null}
                     </View>
                     {health.instructions ? (
-                      <View style={{ marginTop: 6, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", borderRadius: 6, padding: 8, backgroundColor: theme.colors.foregroundMuted + "06" }}>
-                        <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontWeight: "600", textTransform: "uppercase", marginBottom: 4 }}>Instructions</Text>
-                        <Text selectable style={{ color: theme.colors.foreground, fontSize: 12, lineHeight: 16 }}>{health.instructions}</Text>
+                      <View style={{ borderWidth: 1, borderColor: theme.colors.foregroundMuted + "20", borderRadius: 6, padding: 8, backgroundColor: theme.colors.foregroundMuted + "08" }}>
+                        <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontWeight: "700", textTransform: "uppercase", marginBottom: 4 }}>Instructions</Text>
+                        <ScrollView
+                          style={{ maxHeight: 130 }}
+                          nestedScrollEnabled
+                          showsVerticalScrollIndicator
+                          contentContainerStyle={{ flexGrow: 1 }}
+                        >
+                          <Text selectable style={{ color: theme.colors.foreground, fontSize: 12, lineHeight: 16 }}>{health.instructions}</Text>
+                        </ScrollView>
                       </View>
-                    ) : (
-                      <View style={{ marginTop: 6, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", borderRadius: 6, padding: 8, backgroundColor: theme.colors.foregroundMuted + "04" }}>
-                        <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontStyle: "italic" }}>No custom instructions provided by server</Text>
-                      </View>
-                    )}
+                    ) : null}
                     {health.tools && health.tools.length > 0 ? (
-                      <View style={{ marginTop: 6, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", borderRadius: 6, padding: 8, backgroundColor: theme.colors.foregroundMuted + "06" }}>
-                        <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontWeight: "600", textTransform: "uppercase", marginBottom: 4 }}>
+                      <View style={{ borderWidth: 1, borderColor: theme.colors.foregroundMuted + "20", borderRadius: 6, padding: 8, backgroundColor: theme.colors.foregroundMuted + "08" }}>
+                        <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontWeight: "700", textTransform: "uppercase", marginBottom: 4 }}>
                           Available Tools ({health.tools.length})
                         </Text>
-                        <Text selectable style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontFamily: "monospace", lineHeight: 15 }}>
-                          {health.tools.join(", ")}
-                        </Text>
+                        <ScrollView
+                          style={{ maxHeight: 110 }}
+                          nestedScrollEnabled
+                          showsVerticalScrollIndicator
+                          contentContainerStyle={{ flexGrow: 1 }}
+                        >
+                          <Text selectable style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontFamily: "monospace", lineHeight: 15 }}>
+                            {health.tools.join(", ")}
+                          </Text>
+                        </ScrollView>
                       </View>
-                    ) : (
-                      <View style={{ marginTop: 6, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", borderRadius: 6, padding: 8, backgroundColor: theme.colors.foregroundMuted + "04" }}>
-                        <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontStyle: "italic" }}>
-                          {health.toolCount === 0 ? "Server exports 0 tools" : "No tools listed"}
-                        </Text>
-                      </View>
-                    )}
+                    ) : null}
                   </View>
                 ) : null}
-                <View style={{ marginTop: 12, padding: 8, borderRadius: 6, backgroundColor: theme.colors.foregroundMuted + "08", borderWidth: 1, borderColor: theme.colors.foregroundMuted + "14" }}>
-                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 10, fontWeight: "700", textTransform: "uppercase", marginBottom: 4 }}>
-                    Debug Info (State Snapshot)
-                  </Text>
-                  <Text selectable style={{ color: theme.colors.foregroundMuted, fontSize: 10, fontFamily: "monospace" }}>
-                    {JSON.stringify({
-                      status: health?.status ?? "null",
-                      hasHealth: Boolean(health),
-                      healthLoading,
-                      instructionsLength: health?.instructions?.length ?? 0,
-                      toolsLength: health?.tools?.length ?? 0,
-                      hasMap: Boolean(healthMap.get(selected)),
-                    }, null, 2)}
-                  </Text>
-                </View>
                 <Text selectable style={{ color: theme.colors.foregroundMuted, fontSize: 12, marginTop: 12, fontFamily: "monospace" }}>{detail.redacted.slice(0, 4000)}</Text>
-              </OuterScroll>
+              </ScrollView>
             ) : (
               <Text style={{ color: theme.colors.foregroundMuted }}>No detail</Text>
             )}
