@@ -1,31 +1,65 @@
 import { describe, expect, it } from "vitest";
-import { probes } from "./registry.server";
+import { probes, probeForProvider } from "./registry.server";
+import { McpServerSchema } from "./types.server";
 import type { McpProbe } from "./types.server";
 
-describe("probe contract — PRs only need to satisfy this, not implementation", () => {
+describe("provider contract verification (black-box guarantee)", () => {
   for (const probe of probes) {
-    it(`${probe.id} satisfies McpProbe`, async () => {
-      expect(probe.id).toMatch(/^[a-z0-9_-]+$/);
-      expect(typeof probe.label).toBe("string");
-      expect(typeof probe.matches).toBe("function");
-      expect(typeof probe.probe).toBe("function");
+    describe(`provider probe: ${probe.id}`, () => {
+      it("satisfies McpProbe interface format", () => {
+        expect(probe.id).toMatch(/^[a-z0-9_-]+$/);
+        expect(typeof probe.label).toBe("string");
+        expect(probe.label.trim().length).toBeGreaterThan(0);
+        expect(typeof probe.matches).toBe("function");
+        expect(typeof probe.probe).toBe("function");
+      });
 
-      const result = await probe.probe({ agentId: "test-agent", provider: probe.id, cwd: "/tmp" });
-      expect(result).toHaveProperty("servers");
-      expect(Array.isArray(result.servers)).toBe(true);
-      for (const s of result.servers) {
-        expect(s).toHaveProperty("id");
-        expect(s).toHaveProperty("name");
-        expect(s).toHaveProperty("transport");
-        expect(s).toHaveProperty("source");
-        expect(s.source).toHaveProperty("kind");
-      }
+      it("matches its own provider identifier", () => {
+        expect(probe.matches(probe.id)).toBe(true);
+        expect(probe.matches("non-existent-provider-xyz")).toBe(false);
+      });
+
+      it("probes without throwing uncaught exceptions and returns schema-compliant servers", async () => {
+        const result = await probe.probe({
+          agentId: "test-agent-mock",
+          provider: probe.id,
+          cwd: "/tmp",
+          sessionId: "test-session-mock",
+        });
+
+        // 1. Must return a valid result structure
+        expect(result).toBeDefined();
+        expect(Array.isArray(result.servers)).toBe(true);
+        if (result.error !== undefined && result.error !== null) {
+          expect(typeof result.error).toBe("string");
+        }
+
+        // 2. Every returned server MUST strictly pass runtime Zod validation
+        for (const s of result.servers) {
+          const parsed = McpServerSchema.safeParse(s);
+          if (!parsed.success) {
+            console.error(`Invalid server returned by probe ${probe.id}:`, parsed.error.format());
+          }
+          expect(parsed.success).toBe(true);
+        }
+      });
     });
   }
 
-  it("registry is a keyed map — obvious where to add a provider", async () => {
-    const ids = probes.map((p: McpProbe) => p.id);
-    expect(ids).toEqual(expect.arrayContaining(["opencode", "claude", "codex", "pi"]));
-    expect(new Set(ids).size).toBe(ids.length);
+  describe("registry resolution", () => {
+    it("ensures unique probe IDs", () => {
+      const ids = probes.map((p: McpProbe) => p.id);
+      expect(new Set(ids).size).toBe(ids.length);
+    });
+
+    it("resolves probes via probeForProvider", () => {
+      for (const probe of probes) {
+        const found = probeForProvider(probe.id);
+        expect(found).not.toBeNull();
+        expect(found?.id).toBe(probe.id);
+      }
+      expect(probeForProvider("unknown-provider")).toBeNull();
+    });
   });
 });
+
