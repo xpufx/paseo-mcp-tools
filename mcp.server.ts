@@ -149,3 +149,120 @@ export function createHealthHandler() {
     return { results, error };
   };
 }
+
+export function createDiagnoseMcpHandler() {
+  return async (input: { agentId: string }, context: PluginHandlerContext) => {
+    const agent = await loadAgent(input.agentId, context);
+    const steps: Array<{ target: string; status: "found" | "missing" | "error" | "skipped"; details: string; contentPreview: string | null }> = [];
+    const home = os.homedir();
+
+    // 1. Check Paseo stored agent record
+    try {
+      const record = await findStoredRecord(input.agentId);
+      if (record) {
+        const cfg = (record.config ?? {}) as Record<string, unknown>;
+        const mcpServers = (cfg.mcpServers ?? {}) as Record<string, unknown>;
+        const names = Object.keys(mcpServers);
+        steps.push({
+          target: `Paseo Agent Record (${input.agentId})`,
+          status: "found",
+          details: `Found record with ${names.length} MCP server(s): ${names.join(", ") || "none"}`,
+          contentPreview: redact(JSON.stringify(cfg.mcpServers ?? {}, null, 2)),
+        });
+      } else {
+        steps.push({
+          target: `Paseo Agent Record (${input.agentId})`,
+          status: "missing",
+          details: "No stored record file found in ~/.paseo/agents",
+          contentPreview: null,
+        });
+      }
+    } catch (e) {
+      steps.push({
+        target: `Paseo Agent Record (${input.agentId})`,
+        status: "error",
+        details: e instanceof Error ? e.message : String(e),
+        contentPreview: null,
+      });
+    }
+
+    // 2. Check Provider Probe & File Candidates
+    const probe = probeForProvider(agent.provider);
+    let discoveredServerCount = 0;
+    let probeError: string | null = null;
+
+    if (probe) {
+      // Gather file candidates for known file-based providers
+      const candidatePaths: string[] = [];
+      if (agent.provider === "pi") {
+        candidatePaths.push(
+          path.join(home, ".config", "mcp", "mcp.json"),
+          path.join(home, ".agents", "mcp.json"),
+          path.join(home, ".agents", "mcp", "mcp.json"),
+          path.join(home, ".pi", "agent", "mcp.json"),
+          path.join(home, ".pi", "mcp.json"),
+          path.join(home, ".pi", ".mcp.json"),
+          path.join(agent.cwd, "mcp.json"),
+          path.join(agent.cwd, ".mcp.json"),
+          path.join(agent.cwd, ".pi", "mcp.json"),
+          path.join(agent.cwd, ".pi", ".mcp.json"),
+        );
+      } else if (agent.provider === "claude") {
+        candidatePaths.push(
+          path.join(home, ".claude.json"),
+          path.join(home, ".claude", "settings.json"),
+          path.join(agent.cwd, ".claude.json"),
+        );
+      } else if (agent.provider === "codex") {
+        candidatePaths.push(path.join(home, ".codex", "config.toml"));
+      }
+
+      for (const cp of candidatePaths) {
+        const exists = existsSync(cp);
+        if (exists) {
+          try {
+            const raw = await readFile(cp, "utf8");
+            steps.push({
+              target: cp,
+              status: "found",
+              details: `File exists (${raw.length} bytes)`,
+              contentPreview: redact(raw.slice(0, 1000)),
+            });
+          } catch (e) {
+            steps.push({
+              target: cp,
+              status: "error",
+              details: e instanceof Error ? e.message : String(e),
+              contentPreview: null,
+            });
+          }
+        } else {
+          steps.push({
+            target: cp,
+            status: "missing",
+            details: "File not found",
+            contentPreview: null,
+          });
+        }
+      }
+
+      try {
+        const result = await probe.probe({ agentId: input.agentId, provider: agent.provider, cwd: agent.cwd });
+        discoveredServerCount = result.servers.length;
+        if (result.error) probeError = result.error;
+      } catch (e) {
+        probeError = e instanceof Error ? e.message : String(e);
+      }
+    }
+
+    return {
+      provider: agent.provider,
+      cwd: agent.cwd,
+      probeId: probe?.id ?? null,
+      probeLabel: probe?.label ?? null,
+      steps,
+      discoveredServerCount,
+      error: probeError,
+    };
+  };
+}

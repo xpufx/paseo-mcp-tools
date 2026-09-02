@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useMcpQuery } from "./mcp-query.client";
 import { useRpc } from "@getpaseo/plugin";
-import { checkMcpHealth, readMcp } from "./mcp.shared";
+import { checkMcpHealth, diagnoseMcp, readMcp } from "./mcp.shared";
 
 const openers = new Map<string, () => void>();
 
@@ -22,6 +22,7 @@ function McpModal({
   const query = useMcpQuery(agentId);
   const callRead = useRpc(readMcp);
   const callHealth = useRpc(checkMcpHealth);
+  const callDiagnose = useRpc(diagnoseMcp);
   const toast = useToast();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
@@ -30,6 +31,30 @@ function McpModal({
   const [health, setHealth] = useState<{ instructions: string | null; status: string; latencyMs: number; toolCount: number | null; tools: string[] | null; error: string | null } | null>(null);
   const [healthLoading, setHealthLoading] = useState(false);
   const [paseoExpanded, setPaseoExpanded] = useState(false);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
+  const [diagnosticData, setDiagnosticData] = useState<{
+    provider: string;
+    cwd: string;
+    probeId: string | null;
+    probeLabel: string | null;
+    steps: Array<{ target: string; status: "found" | "missing" | "error" | "skipped"; details: string; contentPreview: string | null }>;
+    discoveredServerCount: number;
+    error: string | null;
+  } | null>(null);
+
+  const runDiagnostics = async () => {
+    setShowDiagnostics(true);
+    setDiagnosticsLoading(true);
+    try {
+      const data = await callDiagnose({ agentId });
+      setDiagnosticData(data);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+  };
 
   const term = search.trim().toLowerCase();
   const matches = (s: { name: string; description: string }) =>
@@ -103,7 +128,113 @@ function McpModal({
   return (
     <Modal title="MCP" icon={<Icon name="Plug" />} open={open} onOpenChange={onOpenChange}>
       <Modal.Content>
-        {selected ? (
+        {showDiagnostics ? (
+          <View style={{ gap: 12, padding: 16 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <Pressable onPress={() => setShowDiagnostics(false)}>
+                <Text style={{ color: theme.colors.accent }}>← Back to list</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => void runDiagnostics()}
+                disabled={diagnosticsLoading}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 6,
+                  paddingHorizontal: 10,
+                  paddingVertical: 5,
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: theme.colors.foregroundMuted,
+                  opacity: diagnosticsLoading ? 0.6 : 1,
+                }}
+              >
+                <Icon name="Activity" size={12} color={theme.colors.foregroundMuted} />
+                <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>Re-run</Text>
+              </Pressable>
+            </View>
+            {diagnosticsLoading ? (
+              <View style={{ padding: 24, alignItems: "center", gap: 8 }}>
+                <ActivityIndicator color={theme.colors.accent} />
+                <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>Running host diagnostics…</Text>
+              </View>
+            ) : diagnosticData ? (
+              <OuterScroll style={{ maxHeight: 420 }}>
+                <View style={{ gap: 4, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: theme.colors.foregroundMuted + "18" }}>
+                  <Text style={{ color: theme.colors.foreground, fontSize: 14, fontWeight: "600" }}>Probe Diagnostic Report</Text>
+                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>
+                    Provider: <Text style={{ color: theme.colors.foreground }}>{diagnosticData.provider}</Text>
+                    {diagnosticData.probeLabel ? ` (${diagnosticData.probeLabel})` : " (no matching probe in registry)"}
+                  </Text>
+                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontFamily: "monospace" }}>CWD: {diagnosticData.cwd}</Text>
+                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>
+                    Discovered Servers: <Text style={{ color: theme.colors.statusSuccess, fontWeight: "600" }}>{diagnosticData.discoveredServerCount}</Text>
+                  </Text>
+                  {diagnosticData.error ? (
+                    <Text style={{ color: theme.colors.statusDanger, fontSize: 12, marginTop: 4 }}>Probe Error: {diagnosticData.error}</Text>
+                  ) : null}
+                </View>
+
+                <View style={{ marginTop: 12, gap: 10 }}>
+                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, textTransform: "uppercase" }}>Checked Paths & Targets</Text>
+                  {diagnosticData.steps.map((step, idx) => (
+                    <View
+                      key={idx}
+                      style={{
+                        padding: 8,
+                        borderRadius: 6,
+                        backgroundColor:
+                          step.status === "found"
+                            ? theme.colors.statusSuccess + "14"
+                            : step.status === "error"
+                            ? theme.colors.statusDanger + "14"
+                            : theme.colors.foregroundMuted + "08",
+                      }}
+                    >
+                      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                        <Text style={{ color: theme.colors.foreground, fontSize: 12, fontWeight: "500", flex: 1 }} numberOfLines={1}>
+                          {step.target}
+                        </Text>
+                        <Text
+                          style={{
+                            fontSize: 10,
+                            fontWeight: "600",
+                            textTransform: "uppercase",
+                            color:
+                              step.status === "found"
+                                ? theme.colors.statusSuccess
+                                : step.status === "error"
+                                ? theme.colors.statusDanger
+                                : theme.colors.foregroundMuted,
+                          }}
+                        >
+                          {step.status}
+                        </Text>
+                      </View>
+                      <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, marginTop: 2 }}>{step.details}</Text>
+                      {step.contentPreview ? (
+                        <Text
+                          style={{
+                            color: theme.colors.foregroundMuted,
+                            fontSize: 10,
+                            fontFamily: "monospace",
+                            marginTop: 4,
+                            backgroundColor: theme.colors.foregroundMuted + "10",
+                            padding: 6,
+                            borderRadius: 4,
+                          }}
+                          numberOfLines={6}
+                        >
+                          {step.contentPreview}
+                        </Text>
+                      ) : null}
+                    </View>
+                  ))}
+                </View>
+              </OuterScroll>
+            ) : null}
+          </View>
+        ) : selected ? (
           <View style={{ gap: 12, padding: 16 }}>
             <Pressable onPress={() => { setSelected(null); setDetail(null); }}>
               <Text style={{ color: theme.colors.accent }}>← Back to list</Text>
@@ -138,31 +269,28 @@ function McpModal({
                           nestedScrollEnabled
                           overScrollMode="always"
                           showsVerticalScrollIndicator
-                          bounces={false}
                         >
                           <Text style={{ color: theme.colors.foreground, fontSize: 12 }}>{health.instructions}</Text>
                         </ScrollView>
                       ) : (
-                        <View style={{ marginTop: 4, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", borderRadius: 6, padding: 8 }}>
+                        <View style={{ maxHeight: 120, marginTop: 4, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", borderRadius: 6, padding: 8 }}>
                           <Text style={{ color: theme.colors.foreground, fontSize: 12 }}>{health.instructions}</Text>
                         </View>
                       )
-                    ) : (
-                      <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontStyle: "italic" }}>No instructions advertised.</Text>
-                    )}
+                    ) : null}
                     {health.tools && health.tools.length > 0 ? (
                       Platform.OS === "web" ? (
                         <ScrollView
-                          style={{ maxHeight: 80, marginTop: 4, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "10", borderRadius: 6, padding: 6 }}
+                          style={{ maxHeight: 100, marginTop: 4, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", borderRadius: 6, padding: 8 }}
                           contentContainerStyle={{ flexGrow: 1 }}
                           nestedScrollEnabled
-                          showsVerticalScrollIndicator
                           overScrollMode="always"
+                          showsVerticalScrollIndicator
                         >
                           <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontFamily: "monospace" }}>{health.tools.slice(0, 30).join(", ")}</Text>
                         </ScrollView>
                       ) : (
-                        <View style={{ marginTop: 4, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "10", borderRadius: 6, padding: 6 }}>
+                        <View style={{ maxHeight: 100, marginTop: 4, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", borderRadius: 6, padding: 8 }}>
                           <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontFamily: "monospace" }}>{health.tools.slice(0, 30).join(", ")}</Text>
                         </View>
                       )
@@ -178,29 +306,47 @@ function McpModal({
         ) : (
           <View style={{ gap: 12, padding: 16 }}>
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>
+              <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, flex: 1 }} numberOfLines={1}>
                 {lastCheck ? `Last check ${lastCheck}` : "Never checked"}
                 {query.data?.provider ? ` · provider: ${query.data.provider}` : ""}
                 {query.isFetching ? " • checking…" : ""}
               </Text>
-              <Pressable
-                onPress={() => void query.refetch()}
-                disabled={query.isFetching}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 6,
-                  paddingHorizontal: 10,
-                  paddingVertical: 6,
-                  borderRadius: 8,
-                  borderWidth: 1,
-                  borderColor: theme.colors.foregroundMuted,
-                  opacity: query.isFetching ? 0.6 : 1,
-                }}
-              >
-                <Icon name="RefreshCw" size={12} color={theme.colors.foregroundMuted} />
-                <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>Refresh</Text>
-              </Pressable>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Pressable
+                  onPress={() => void runDiagnostics()}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 4,
+                    paddingHorizontal: 8,
+                    paddingVertical: 6,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: theme.colors.foregroundMuted,
+                  }}
+                >
+                  <Icon name="Activity" size={12} color={theme.colors.foregroundMuted} />
+                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>Diagnose</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => void query.refetch()}
+                  disabled={query.isFetching}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 6,
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: theme.colors.foregroundMuted,
+                    opacity: query.isFetching ? 0.6 : 1,
+                  }}
+                >
+                  <Icon name="RefreshCw" size={12} color={theme.colors.foregroundMuted} />
+                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>Refresh</Text>
+                </Pressable>
+              </View>
             </View>
             <TextInput
               value={search}

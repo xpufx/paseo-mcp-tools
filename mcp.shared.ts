@@ -88,3 +88,24 @@ export const readMcp = defineRpc({
     redacted: z.string(),
   }),
 });
+
+export const DiagnosticStepSchema = z.object({
+  target: z.string(),
+  status: z.enum(["found", "missing", "error", "skipped"]),
+  details: z.string(),
+  contentPreview: z.string().nullable(),
+});
+
+export const diagnoseMcp = defineRpc({
+  name: "mcp.diagnose",
+  input: z.object({ agentId: z.string() }),
+  output: z.object({
+    provider: z.string(),
+    cwd: z.string(),
+    probeId: z.string().nullable(),
+    probeLabel: z.string().nullable(),
+    steps: z.array(DiagnosticStepSchema),
+    discoveredServerCount: z.number(),
+    error: z.string().nullable(),
+  }),
+});
