@@ -28,7 +28,7 @@ function McpModal({
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<{ raw: string; redacted: string; path: string } | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [health, setHealth] = useState<{ instructions: string | null; status: string; latencyMs: number; toolCount: number | null; tools: string[] | null; error: string | null } | null>(null);
+  const [health, setHealth] = useState<{ instructions: string | null; status: "healthy" | "degraded" | "down" | "unknown"; latencyMs: number; toolCount: number | null; tools: string[] | null; error: string | null } | null>(null);
   const [healthLoading, setHealthLoading] = useState(false);
   const [paseoExpanded, setPaseoExpanded] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
@@ -400,8 +400,9 @@ function McpModal({
                 ) : health ? (
                   <View style={{ marginTop: 8, gap: 10, padding: 12, backgroundColor: theme.colors.foregroundMuted + "10", borderRadius: 8 }}>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Text style={{ color: getStatusColor(health.status), fontSize: 13 }}>{getStatusDot(health.status)}</Text>
                       <Text style={{ color: theme.colors.foreground, fontSize: 13, fontWeight: "700" }}>
-                        {health.status.toUpperCase()} · {health.latencyMs}ms · {health.toolCount ?? "?"} tools
+                        {health.latencyMs}ms · {health.toolCount ?? "?"} tools
                       </Text>
                       {health.error ? <Text style={{ color: theme.colors.statusDanger, fontSize: 11 }}>{health.error.slice(0, 120)}</Text> : null}
                     </View>
@@ -524,9 +525,6 @@ function McpModal({
 
                             {h ? (
                               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                                <Text style={{ color: statusColor, fontSize: 11, fontWeight: "600", textTransform: "uppercase" }}>
-                                  {h.status}
-                                </Text>
                                 <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>
                                   {h.latencyMs}ms{h.toolCount !== null ? ` · ${h.toolCount} tools` : ""}
                                 </Text>
