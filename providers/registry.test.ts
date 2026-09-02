@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { probes, probeForProvider } from "./registry.server";
-import { McpServerSchema } from "./types.server";
+import { McpServerSchema } from "../mcp.shared";
 import type { McpProbe } from "./types.server";
 
 describe("provider contract verification (black-box guarantee)", () => {
