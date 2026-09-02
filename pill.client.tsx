@@ -340,38 +340,28 @@ function McpModal({
                       {health.error ? <Text style={{ color: theme.colors.statusDanger, fontSize: 11 }}>{health.error.slice(0, 120)}</Text> : null}
                     </View>
                     {health.instructions ? (
-                      Platform.OS === "web" ? (
+                      <View style={{ maxHeight: 130, marginTop: 4, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", borderRadius: 6, padding: 8 }}>
                         <ScrollView
-                          style={{ maxHeight: 120, marginTop: 4, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", borderRadius: 6, padding: 8 }}
-                          contentContainerStyle={{ flexGrow: 1 }}
                           nestedScrollEnabled
-                          overScrollMode="always"
+                          keyboardShouldPersistTaps="handled"
                           showsVerticalScrollIndicator
+                          contentContainerStyle={{ flexGrow: 1 }}
                         >
                           <Text style={{ color: theme.colors.foreground, fontSize: 12 }}>{health.instructions}</Text>
                         </ScrollView>
-                      ) : (
-                        <View style={{ maxHeight: 120, marginTop: 4, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", borderRadius: 6, padding: 8 }}>
-                          <Text style={{ color: theme.colors.foreground, fontSize: 12 }}>{health.instructions}</Text>
-                        </View>
-                      )
+                      </View>
                     ) : null}
                     {health.tools && health.tools.length > 0 ? (
-                      Platform.OS === "web" ? (
+                      <View style={{ maxHeight: 110, marginTop: 4, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", borderRadius: 6, padding: 8 }}>
                         <ScrollView
-                          style={{ maxHeight: 100, marginTop: 4, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", borderRadius: 6, padding: 8 }}
-                          contentContainerStyle={{ flexGrow: 1 }}
                           nestedScrollEnabled
-                          overScrollMode="always"
+                          keyboardShouldPersistTaps="handled"
                           showsVerticalScrollIndicator
+                          contentContainerStyle={{ flexGrow: 1 }}
                         >
-                          <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontFamily: "monospace" }}>{health.tools.slice(0, 30).join(", ")}</Text>
+                          <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontFamily: "monospace" }}>{health.tools.join(", ")}</Text>
                         </ScrollView>
-                      ) : (
-                        <View style={{ maxHeight: 100, marginTop: 4, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", borderRadius: 6, padding: 8 }}>
-                          <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontFamily: "monospace" }}>{health.tools.slice(0, 30).join(", ")}</Text>
-                        </View>
-                      )
+                      </View>
                     ) : null}
                   </View>
                 ) : null}
