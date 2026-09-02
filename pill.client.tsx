@@ -423,10 +423,6 @@ function McpModal({
                     ) : null}
                   </View>
                 ) : null}
-                <View style={{ marginTop: 6, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", borderRadius: 6, padding: 10, backgroundColor: theme.colors.foregroundMuted + "04" }}>
-                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontWeight: "700", textTransform: "uppercase", marginBottom: 6 }}>Configuration</Text>
-                  <Text selectable style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontFamily: "monospace", lineHeight: 16 }}>{detail.redacted.slice(0, 4000)}</Text>
-                </View>
               </View>
             ) : (
               <Text style={{ color: theme.colors.foregroundMuted }}>No detail</Text>
