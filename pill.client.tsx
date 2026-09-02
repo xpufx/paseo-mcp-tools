@@ -161,7 +161,24 @@ function McpModal({
             ) : diagnosticData ? (
               <OuterScroll style={{ maxHeight: 420 }}>
                 <View style={{ gap: 4, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: theme.colors.foregroundMuted + "18" }}>
-                  <Text style={{ color: theme.colors.foreground, fontSize: 14, fontWeight: "600" }}>Probe Diagnostic Report</Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                    <Text style={{ color: theme.colors.foreground, fontSize: 14, fontWeight: "600" }}>Probe Diagnostic Report</Text>
+                    <Pressable
+                      onPress={() => void copy(JSON.stringify(diagnosticData, null, 2))}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 4,
+                        paddingHorizontal: 8,
+                        paddingVertical: 4,
+                        borderRadius: 6,
+                        backgroundColor: theme.colors.foregroundMuted + "14",
+                      }}
+                    >
+                      <Icon name="Copy" size={11} color={theme.colors.foregroundMuted} />
+                      <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>Copy JSON</Text>
+                    </Pressable>
+                  </View>
                   <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>
                     Provider: <Text style={{ color: theme.colors.foreground }}>{diagnosticData.provider}</Text>
                     {diagnosticData.probeLabel ? ` (${diagnosticData.probeLabel})` : " (no matching probe in registry)"}
@@ -195,21 +212,29 @@ function McpModal({
                         <Text style={{ color: theme.colors.foreground, fontSize: 12, fontWeight: "500", flex: 1 }} numberOfLines={1}>
                           {step.target}
                         </Text>
-                        <Text
-                          style={{
-                            fontSize: 10,
-                            fontWeight: "600",
-                            textTransform: "uppercase",
-                            color:
-                              step.status === "found"
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                          <Pressable
+                            onPress={() => void copy(step.contentPreview ?? step.target)}
+                            style={{ padding: 2 }}
+                          >
+                            <Icon name="Copy" size={11} color={theme.colors.foregroundMuted} />
+                          </Pressable>
+                          <Text
+                            style={{
+                              fontSize: 10,
+                              fontWeight: "600",
+                              textTransform: "uppercase",
+                              color:
+                                step.status === "found"
                                 ? theme.colors.statusSuccess
                                 : step.status === "error"
                                 ? theme.colors.statusDanger
                                 : theme.colors.foregroundMuted,
-                          }}
-                        >
-                          {step.status}
-                        </Text>
+                            }}
+                          >
+                            {step.status}
+                          </Text>
+                        </View>
                       </View>
                       <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, marginTop: 2 }}>{step.details}</Text>
                       {step.contentPreview ? (
