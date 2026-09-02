@@ -10,15 +10,17 @@ function redact(text: string): string {
     .replace(/(token|secret|key|password|auth)=[^\s"']+/gi, "$1=•••");
 }
 
-function stripComments(s: string): string {
-  // minimal — pi allows trailing commas & comments via strip-json-comments but we survive without it
-  return s.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+function stripCommentsAndTrailingCommas(s: string): string {
+  return s
+    .replace(/\/\/.*$/gm, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/,\s*([}\]])/g, "$1");
 }
 
 async function readServers(filePath: string): Promise<Record<string, unknown>> {
   if (!existsSync(filePath)) return {};
   try {
-    const raw = stripComments(await readFile(filePath, "utf8"));
+    const raw = stripCommentsAndTrailingCommas(await readFile(filePath, "utf8"));
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     const mcp = (parsed.mcpServers ?? parsed["mcp-servers"] ?? {}) as Record<string, unknown>;
     if (!mcp || typeof mcp !== "object" || Array.isArray(mcp)) return {};
@@ -54,18 +56,28 @@ export const piProbe: McpProbe = {
   matches: (provider) => provider === "pi",
   async probe(ctx: ProbeContext) {
     const home = os.homedir();
-    const agentDir = process.env.PI_CODING_AGENT_DIR?.trim()
+    const envDir = process.env.PI_CODING_AGENT_DIR?.trim()
       ? path.resolve(process.env.PI_CODING_AGENT_DIR.trim().replace(/^~\//, `${home}/`))
-      : path.join(home, ".pi", "agent");
+      : null;
 
-    // Precedence low -> high (later wins), same as pi-mcp-adapter README
+    // Precedence: lower index = base default, higher index = override wins
     const candidates: Array<{ path: string; label: string }> = [
       { path: path.join(home, ".config", "mcp", "mcp.json"), label: "pi · global shared" },
       { path: path.join(home, ".agents", "mcp.json"), label: "pi · agents global" },
       { path: path.join(home, ".agents", "mcp", "mcp.json"), label: "pi · agents nested" },
-      { path: path.join(agentDir, "mcp.json"), label: "pi · global override" },
+      { path: path.join(home, ".pi", "agent", "mcp.json"), label: "pi · agent global" },
+      { path: path.join(home, ".pi", "mcp.json"), label: "pi · user config" },
+      { path: path.join(home, ".pi", ".mcp.json"), label: "pi · user config" },
+      ...(envDir
+        ? [
+            { path: path.join(envDir, "mcp.json"), label: "pi · env config" },
+            { path: path.join(envDir, ".mcp.json"), label: "pi · env config" },
+          ]
+        : []),
+      { path: path.join(ctx.cwd, "mcp.json"), label: "pi · project shared" },
       { path: path.join(ctx.cwd, ".mcp.json"), label: "pi · project shared" },
       { path: path.join(ctx.cwd, ".pi", "mcp.json"), label: "pi · project override" },
+      { path: path.join(ctx.cwd, ".pi", ".mcp.json"), label: "pi · project override" },
     ];
 
     const merged = new Map<string, { def: unknown; source: (typeof candidates)[number] }>();
