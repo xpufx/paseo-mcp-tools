@@ -358,27 +358,19 @@ function McpModal({
                       {health.error ? <Text style={{ color: theme.colors.statusDanger, fontSize: 11 }}>{health.error.slice(0, 120)}</Text> : null}
                     </View>
                     {health.instructions ? (
-                      <View style={{ maxHeight: 130, marginTop: 4, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", borderRadius: 6, padding: 8 }}>
-                        <ScrollView
-                          nestedScrollEnabled
-                          keyboardShouldPersistTaps="handled"
-                          showsVerticalScrollIndicator
-                          contentContainerStyle={{ flexGrow: 1 }}
-                        >
-                          <Text style={{ color: theme.colors.foreground, fontSize: 12 }}>{health.instructions}</Text>
-                        </ScrollView>
+                      <View style={{ marginTop: 6, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", borderRadius: 6, padding: 8, backgroundColor: theme.colors.foregroundMuted + "06" }}>
+                        <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontWeight: "600", textTransform: "uppercase", marginBottom: 4 }}>Instructions</Text>
+                        <Text style={{ color: theme.colors.foreground, fontSize: 12, lineHeight: 16 }}>{health.instructions}</Text>
                       </View>
                     ) : null}
                     {health.tools && health.tools.length > 0 ? (
-                      <View style={{ maxHeight: 110, marginTop: 4, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", borderRadius: 6, padding: 8 }}>
-                        <ScrollView
-                          nestedScrollEnabled
-                          keyboardShouldPersistTaps="handled"
-                          showsVerticalScrollIndicator
-                          contentContainerStyle={{ flexGrow: 1 }}
-                        >
-                          <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontFamily: "monospace" }}>{health.tools.join(", ")}</Text>
-                        </ScrollView>
+                      <View style={{ marginTop: 6, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", borderRadius: 6, padding: 8, backgroundColor: theme.colors.foregroundMuted + "06" }}>
+                        <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontWeight: "600", textTransform: "uppercase", marginBottom: 4 }}>
+                          Available Tools ({health.tools.length})
+                        </Text>
+                        <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontFamily: "monospace", lineHeight: 15 }}>
+                          {health.tools.join(", ")}
+                        </Text>
                       </View>
                     ) : null}
                   </View>
