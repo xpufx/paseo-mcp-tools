@@ -1,3 +1,6 @@
 {
-  "id": "mcp-tools"
+  "id": "mcp-tools",
+  "build": [
+    ["node", "scripts/version.mjs"]
+  ]
 }

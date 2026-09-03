@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { probes, probeForProvider } from "./registry.server";
+import { probes, probeForProvider } from "./index";
 import { McpServerSchema } from "../mcp.shared";
-import type { McpProbe } from "./types.server";
+import type { McpProbe } from "../discovery/types";
 
 describe("provider contract verification (black-box guarantee)", () => {
   for (const probe of probes) {
@@ -46,7 +46,7 @@ describe("provider contract verification (black-box guarantee)", () => {
     });
   }
 
-  describe("registry resolution", () => {
+  describe("catalog resolution", () => {
     it("ensures unique probe IDs", () => {
       const ids = probes.map((p: McpProbe) => p.id);
       expect(new Set(ids).size).toBe(ids.length);
@@ -62,4 +62,3 @@ describe("provider contract verification (black-box guarantee)", () => {
     });
   });
 });
-

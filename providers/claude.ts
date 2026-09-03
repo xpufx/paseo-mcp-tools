@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
-import { discoverFromCandidates } from "./extract.server";
-import type { McpProbe, ProbeContext } from "./types.server";
+import { discoverFromCandidates } from "../discovery/extract";
+import type { McpProbe, ProbeContext } from "../discovery/types";
 
 export const claudeProbe: McpProbe = {
   id: "claude",
@@ -16,3 +16,5 @@ export const claudeProbe: McpProbe = {
     ]);
   },
 };
+
+export default claudeProbe;

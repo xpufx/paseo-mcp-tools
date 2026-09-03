@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import type { McpServer } from "./types.server";
+import type { McpServer, DiagnosticStep } from "./types";
 
 export interface CandidatePath {
   path: string;
@@ -114,7 +114,14 @@ export function normalizeMcpServer(
   if (!name) return null;
 
   // Extract URL
-  const url = typeof def.url === "string" ? def.url : typeof def.endpoint === "string" ? def.endpoint : null;
+  const url =
+    typeof def.url === "string"
+      ? def.url
+      : typeof def.endpoint === "string"
+        ? def.endpoint
+        : typeof def.serverUrl === "string"
+          ? def.serverUrl
+          : null;
 
   // Extract command & args
   let command: string | null = null;
@@ -212,33 +219,68 @@ export function extractMcpServersFromText(
 export async function discoverFromCandidates(
   idPrefix: string,
   candidates: CandidatePath[],
-): Promise<{ servers: McpServer[]; error: string | null }> {
+): Promise<{ servers: McpServer[]; error: string | null; steps: DiagnosticStep[] }> {
   const merged = new Map<string, { def: unknown; name: string; source: CandidatePath }>();
+  const steps: DiagnosticStep[] = [];
 
   for (const cand of candidates) {
-    if (!existsSync(cand.path)) continue;
+    if (!existsSync(cand.path)) {
+      steps.push({
+        target: cand.path,
+        status: "missing",
+        details: `${cand.label} does not exist`,
+        contentPreview: null,
+      });
+      continue;
+    }
     try {
       const raw = await readFile(cand.path, "utf8");
       const parsed = parseJsonc(raw);
-      if (!parsed) continue;
+      if (!parsed) {
+        steps.push({
+          target: cand.path,
+          status: "error",
+          details: `${cand.label} (${raw.length} bytes) · Invalid JSON/JSONC syntax`,
+          contentPreview: redact(raw.slice(0, 1000)),
+        });
+        continue;
+      }
 
       const container = findServersContainer(parsed);
-      if (!container) continue;
-
-      if (Array.isArray(container)) {
-        for (let i = 0; i < container.length; i++) {
-          const item = container[i];
-          const name = (item && typeof item === "object" && typeof (item as Record<string, unknown>).name === "string")
-            ? (item as Record<string, unknown>).name as string
-            : `server-${i + 1}`;
-          merged.set(name, { def: item, name, source: cand });
-        }
-      } else {
-        for (const [name, item] of Object.entries(container)) {
-          merged.set(name, { def: item, name, source: cand });
+      let count = 0;
+      if (container) {
+        if (Array.isArray(container)) {
+          count = container.length;
+          for (let i = 0; i < container.length; i++) {
+            const item = container[i];
+            const name = (item && typeof item === "object" && typeof (item as Record<string, unknown>).name === "string")
+              ? (item as Record<string, unknown>).name as string
+              : `server-${i + 1}`;
+            merged.set(name, { def: item, name, source: cand });
+          }
+        } else {
+          const entries = Object.entries(container);
+          count = entries.length;
+          for (const [name, item] of entries) {
+            merged.set(name, { def: item, name, source: cand });
+          }
         }
       }
-    } catch {}
+
+      steps.push({
+        target: cand.path,
+        status: "found",
+        details: `${cand.label} (${raw.length} bytes) · Valid config with ${count} MCP server(s)`,
+        contentPreview: redact(raw.slice(0, 1000)),
+      });
+    } catch (e) {
+      steps.push({
+        target: cand.path,
+        status: "error",
+        details: `${cand.label} failed to read: ${e instanceof Error ? e.message : String(e)}`,
+        contentPreview: null,
+      });
+    }
   }
 
   const servers: McpServer[] = [];
@@ -247,5 +289,5 @@ export async function discoverFromCandidates(
     if (s) servers.push(s);
   }
 
-  return { servers, error: null };
+  return { servers, error: null, steps };
 }

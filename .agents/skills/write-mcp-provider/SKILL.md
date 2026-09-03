@@ -14,9 +14,9 @@ This skill guides you through adding support for a new AI coding agent CLI or ed
 ## 1. Architecture Overview
 
 Every provider is an isolated, black-box probe that implements `McpProbe`:
-- **Location**: `providers/<id>.server.ts`
-- **Output**: Returns `Promise<{ servers: McpServer[], error?: string | null }>`
-- **No External Dependencies**: Use standard Node.js APIs (`path`, `os`, `node:fs/promises`, `node:child_process`) or the built-in `discoverFromCandidates` helper.
+- **Location**: `providers/<id>.ts`
+- **Output**: Returns `Promise<{ servers: McpServer[], error?: string | null, steps?: DiagnosticStep[] }>`
+- **No External Dependencies**: Use standard Node.js APIs (`path`, `os`, `node:fs/promises`, `node:child_process`) or the built-in `discoverFromCandidates` helper from `../discovery/extract`.
 
 ---
 
@@ -24,13 +24,13 @@ Every provider is an isolated, black-box probe that implements `McpProbe`:
 
 If the tool stores its MCP configurations in standard JSON/JSONC/TOML files on disk (like Pi, Claude, Cursor, Windsurf, VS Code):
 
-Create `providers/<id>.server.ts`:
+Create `providers/<id>.ts`:
 
 ```typescript
 import os from "node:os";
 import path from "node:path";
-import { discoverFromCandidates } from "./extract.server";
-import type { McpProbe, ProbeContext } from "./types.server";
+import { discoverFromCandidates } from "../discovery/extract";
+import type { McpProbe, ProbeContext } from "../discovery/types";
 
 export const myToolProbe: McpProbe = {
   id: "mytool",
@@ -47,6 +47,8 @@ export const myToolProbe: McpProbe = {
     ]);
   },
 };
+
+export default myToolProbe;
 ```
 
 `discoverFromCandidates` automatically handles:
@@ -55,6 +57,7 @@ export const myToolProbe: McpProbe = {
 - Detecting root keys (`mcpServers`, `mcp-servers`, `mcp`, `servers`, or top-level dictionary).
 - Resolving `stdio` (command + args), `http`, and `sse` transports.
 - Redacting tokens, passwords, and sensitive environment keys.
+- Emitting `steps` for the built-in Paseo MCP diagnosis report automatically.
 
 ---
 
@@ -62,11 +65,11 @@ export const myToolProbe: McpProbe = {
 
 If the tool provides a live CLI subcommand that lists active session tools (like OpenCode):
 
-Create `providers/<id>.server.ts`:
+Create `providers/<id>.ts`:
 
 ```typescript
 import { spawn } from "node:child_process";
-import type { McpProbe, ProbeContext, McpServer } from "./types.server";
+import type { McpProbe, ProbeContext, McpServer } from "../discovery/types";
 
 export const myCliProbe: McpProbe = {
   id: "mycli",
@@ -98,25 +101,21 @@ export const myCliProbe: McpProbe = {
     });
   },
 };
+
+export default myCliProbe;
 ```
 
 ---
 
-## 4. Register the Probe
+## 4. Register the Probe (1-Liner)
 
-Add your probe to `providers/registry.server.ts`:
+Add 1 line to `providers/catalog.ts`:
 
 ```typescript
-import { myToolProbe } from "./mytool.server";
-
-export const probes: McpProbe[] = [
-  opencodeProbe,
-  claudeProbe,
-  codexProbe,
-  piProbe,
-  myToolProbe, // <-- Add here
-];
+export { default as mytool } from "./mytool";
 ```
+
+That's it! `providers/index.ts` automatically incorporates the new probe into `probes`, the `probeForProvider` resolver, diagnostics, and test suites.
 
 ---
 
@@ -129,7 +128,7 @@ npm test
 npm run typecheck
 ```
 
-The contract test (`providers/registry.test.ts`) guarantees:
+The contract test (`providers/providers.test.ts`) guarantees:
 1. Valid ID format (`/^[a-z0-9_-]+$/`) and label.
 2. `matches(provider)` behaves correctly.
 3. Probing does not throw uncaught exceptions.

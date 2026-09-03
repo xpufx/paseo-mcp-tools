@@ -132,10 +132,14 @@ export const DiagnosticStepSchema = z.object({
   contentPreview: z.string().nullable(),
 });
 
+export type DiagnosticStep = z.infer<typeof DiagnosticStepSchema>;
+
 export const diagnoseMcp = defineRpc({
   name: "mcp.diagnose",
   input: z.object({ agentId: z.string() }),
   output: z.object({
+    report: z.string(),
+    version: z.string(),
     provider: z.string(),
     cwd: z.string(),
     probeId: z.string().nullable(),

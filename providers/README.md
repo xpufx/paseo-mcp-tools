@@ -1,50 +1,51 @@
-# Provider probes — contract-first
+# Provider Probes — Contract-First
 
-You don't test people's probe logic, you test that they satisfy the interface. PRs that add a CLI only touch **one file + registry**.
+You don't test people's probe logic, you test that they satisfy the interface. Adding a new provider only touches **one file + 1 line in catalog**.
 
 ## Contract
 
-`providers/types.server.ts: McpProbe`
+`discovery/types.ts: McpProbe`
 
 ```ts
 interface McpProbe {
   id: string;                      // key in registry, e.g. "opencode"
   label: string;                   // human, e.g. "opencode · live"
   matches(provider: string): bool  // does this probe handle this Paseo provider id?
-  probe(ctx: ProbeContext): Promise<ProbeResult> // live, per-agent, no filesystem prediction
+  probe(ctx: ProbeContext): Promise<ProbeResult> // live probe run
 }
 
-interface ProbeContext { agentId, provider, cwd, sessionId? }
-interface ProbeResult { servers: McpServer[], error?: string|null }
+interface ProbeContext { agentId: string; provider: string; cwd: string; sessionId?: string | null }
+interface ProbeResult { servers: McpServer[]; error?: string | null; steps?: DiagnosticStep[] }
 ```
 
 `McpServer` is `mcp.shared.ts: McpServerSchema` — `id, name, transport, source{kind,label,path}, command, url, description, hasSecrets, configPreview`.
 
 ## Adding a provider
 
-1. Create `providers/<id>.server.ts`:
+1. Create `providers/<id>.ts`:
    ```ts
-   export const myProbe: McpProbe = {
+   import type { McpProbe, ProbeContext } from "../discovery/types";
+
+   const myProbe: McpProbe = {
      id: "mycli",
      label: "mycli · live",
      matches: (p) => p === "mycli",
-     async probe(ctx) {
-       // talk to the live CLI session via SDK, HTTP, CLI command, NOT config files
-       // return { servers: [...], error: null }
+     async probe(ctx: ProbeContext) {
+       // discover servers
+       return { servers: [...], error: null };
      },
    };
+
+   export default myProbe;
    ```
-2. Add to `providers/registry.server.ts`:
+
+2. Add 1 line to `providers/catalog.ts`:
    ```ts
-   import { myProbe } from "./mycli.server";
-   export const probes = [opencodeProbe, claudeProbe, codexProbe, piProbe, myProbe];
+   export { default as mycli } from "./mycli";
    ```
-3. Done. `mcp.server.ts: discoverLiveServers` will call it for any agent where `matches(provider)` is true. No central if/else to modify.
 
-## What "live" means
-
-Not `readFile("~/.claude.json")` as prediction — call the CLI's own session RPC/HTTP/CLI that lists *registered* MCP servers for `ctx.agentId`/`ctx.sessionId`. See `providers/opencode.server.ts` (currently file fallback until opencode exposes `mcp.list`) and `providers/pi.server.ts` stub.
+3. Done. The probe is automatically indexed into `probes`, used by `probeForProvider`, reported in diagnostics, and validated by `npm test`.
 
 ## Tests
 
-`providers/registry.test.ts` only checks the contract — `id` format, `probe` returns `servers[]` with required fields. It never asserts probe *logic*. Merge if that passes.
+`providers/providers.test.ts` checks contract compliance — `id` format, `probe` execution, and Zod validation for every returned server.

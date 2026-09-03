@@ -1,6 +1,6 @@
-import type { McpServer } from "../mcp.shared";
+import type { McpServer, DiagnosticStep } from "../mcp.shared";
 
-export type { McpServer };
+export type { McpServer, DiagnosticStep };
 
 export interface ProbeContext {
   agentId: string;
@@ -12,6 +12,7 @@ export interface ProbeContext {
 export interface ProbeResult {
   servers: McpServer[];
   error?: string | null;
+  steps?: DiagnosticStep[];
 }
 
 export interface McpProbe {

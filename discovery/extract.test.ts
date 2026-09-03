@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractMcpServersFromText, parseJsonc } from "./extract.server";
+import { extractMcpServersFromText, parseJsonc } from "./extract";
 import { McpServerSchema } from "../mcp.shared";
 
 describe("Universal MCP Extractor Heuristics", () => {
@@ -107,7 +107,8 @@ describe("Universal MCP Extractor Heuristics", () => {
   });
 });
 
-import { claudeProbe } from "./claude.server";
+import claudeProbe from "../providers/claude";
+import antigravityProbe from "../providers/antigravity";
 
 describe("Live Local Filesystem Verification", () => {
   it("extracts real ~/.claude.json on this machine", async () => {
@@ -121,5 +122,20 @@ describe("Live Local Filesystem Verification", () => {
       console.log(`  - [${s.transport.toUpperCase()}] ${s.name} -> ${s.command || s.url} (hasSecrets: ${s.hasSecrets})`);
     }
     expect(res.servers.length).toBeGreaterThan(0);
+  });
+
+  it("extracts real Antigravity ~/.gemini/config/mcp_config.json on this machine", async () => {
+    const res = await antigravityProbe.probe({
+      agentId: "live-test-antigravity",
+      provider: "antigravity-acp",
+      cwd: process.cwd(),
+    });
+    console.log(`\n=== REAL ANTIGRAVITY CONFIG EXTRACTED: ${res.servers.length} SERVERS ===`);
+    for (const s of res.servers) {
+      console.log(`  - [${s.transport.toUpperCase()}] ${s.name} -> ${s.command || s.url} (hasSecrets: ${s.hasSecrets})`);
+    }
+    expect(res.servers.length).toBe(4);
+    const names = res.servers.map((s) => s.name).sort();
+    expect(names).toEqual(["chrome-devtools-local", "deepwiki", "forgejo", "paseo-x-comms"]);
   });
 });

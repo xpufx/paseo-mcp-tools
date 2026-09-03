@@ -5,6 +5,7 @@ import { ActivityIndicator, Platform, Pressable, ScrollView, Text, TextInput, Vi
 import { useMcpQuery } from "./mcp-query.client";
 import { useRpc } from "@getpaseo/plugin";
 import { callMcpTool, checkMcpHealth, diagnoseMcp, readMcp, type ToolInfo } from "./mcp.shared";
+import { PLUGIN_VERSION } from "./version";
 
 const openers = new Map<string, () => void>();
 
@@ -297,7 +298,7 @@ function McpModal({
   const lastCheck = query.dataUpdatedAt ? new Date(query.dataUpdatedAt).toLocaleTimeString() : null;
 
   return (
-    <Modal title="MCP" icon={<Icon name="Plug" />} open={open} onOpenChange={onOpenChange}>
+    <Modal title={`MCP (${PLUGIN_VERSION})`} icon={<Icon name="Plug" />} open={open} onOpenChange={onOpenChange}>
       <Modal.Content>
         {showDiagnostics ? (
           <View style={{ gap: 12, padding: 16 }}>
@@ -333,7 +334,7 @@ function McpModal({
               <View style={{ gap: 12 }}>
                 <View style={{ gap: 4, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: theme.colors.foregroundMuted + "18" }}>
                   <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                    <Text style={{ color: theme.colors.foreground, fontSize: 14, fontWeight: "600" }}>Probe Diagnostic Report</Text>
+                    <Text style={{ color: theme.colors.foreground, fontSize: 14, fontWeight: "600" }}>Probe Diagnostic Report ({PLUGIN_VERSION})</Text>
                     <Pressable
                       onPress={() => void copy(JSON.stringify(diagnosticData, null, 2))}
                       style={{
@@ -681,7 +682,8 @@ function McpModal({
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
               <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, flex: 1 }} numberOfLines={1}>
                 {lastCheck ? `Last check ${lastCheck}` : "Never checked"}
-                {query.data?.provider ? ` · provider: ${query.data.provider}` : ""}
+                {query.data?.provider ? ` · ${query.data.provider}` : ""}
+                {` · ${PLUGIN_VERSION}`}
                 {query.isFetching ? " • checking…" : ""}
               </Text>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>

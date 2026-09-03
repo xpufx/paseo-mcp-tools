@@ -32,6 +32,7 @@ Provides an inline UI for checking MCP servers available to an agent session wit
 
 | Provider | Probe Mechanism | Status |
 |---|---|---|
+| **Antigravity** (`antigravity`, `antigravity-acp`) | Global `~/.gemini/config/mcp_config.json` + `~/.antigravity/mcp_config.json` | **Fully tested & verified** |
 | **OpenCode** (`opencode`) | Live `opencode mcp list` daemon CLI command + config | **Fully tested & verified** |
 | **Pi** (`pi`) | User canonical `~/.pi/.mcp.json` / project overrides + heuristics | **Fully tested & verified** |
 | **Claude** (`claude`) | User `~/.claude.json` / project `.claude.json` heuristics | **Tested against real active configs** *(without live subscription session)* |
@@ -40,8 +41,8 @@ Provides an inline UI for checking MCP servers available to an agent session wit
 ## Dropping in New Providers
 
 Adding a new tool/CLI probe (e.g. Cursor, Windsurf, Zed, Roo, Cline) is black-box and takes 2 simple steps:
-1. Create `providers/<id>.server.ts` declaring candidate config paths using `discoverFromCandidates()`.
-2. Add your probe to `providers/registry.server.ts`.
+1. Create `providers/<id>.ts` declaring candidate config paths using `discoverFromCandidates()` (or live CLI RPC) with `export default <id>Probe`.
+2. Add a 1-line re-export to `providers/catalog.ts`: `export { default as <id> } from "./<id>";`.
 
 See the complete step-by-step guide in the [write-mcp-provider skill](.agents/skills/write-mcp-provider/SKILL.md) (`.agents/skills/write-mcp-provider/SKILL.md`). Run `npm test` to automatically verify the probe satisfies the contract.
 
@@ -51,12 +52,15 @@ See the complete step-by-step guide in the [write-mcp-provider skill](.agents/sk
 |---|---|
 | `index.ts` | Wiring only — `handle(mcp.list)`, `handle(mcp.read)`, `handle(mcp.health)`, `handle(mcp.call_tool)`, `handle(mcp.diagnose)`, `addClientSide` |
 | `mcp.shared.ts` | zod RPC contracts & shared types (`ToolInfoSchema`, `callMcpTool`, etc.) |
-| `mcp.server.ts` | `discoverLiveServers()`, tool runner execution bridge, and diagnostic handlers |
-| `providers/extract.server.ts` | Universal heuristic MCP parser (JSON/JSONC, comments, trailing commas, URL safe) |
-| `providers/<id>.server.ts` | Per-CLI live probe — isolated, contract `McpProbe` |
+| `mcp.server.ts` | `discoverLiveServers()`, tool runner execution bridge, and polymorphic diagnostic handlers |
+| `discovery/extract.ts` | Universal heuristic MCP parser (JSON/JSONC, comments, trailing commas, URL safe) & candidate discovery |
+| `discovery/types.ts` | Core contracts (`McpProbe`, `ProbeContext`, `ProbeResult`) |
+| `providers/<id>.ts` | Per-CLI live probe — isolated, contract `McpProbe` (`antigravity.ts`, `claude.ts`, etc.) |
+| `providers/catalog.ts` | 1-line re-export catalog for zero-boilerplate probe registration |
 | `health/health.server.ts` | Generic MCP SDK client — `instructions`, schema-aware `tools`, and `callMcpServerTool` |
 | `mcp-query.client.tsx` | `useMcpQuery` shared pill/modal, 30m timer + manual Refresh |
 | `pill.client.tsx` | Pill, modal, server details, diagnostics, and interactive Tool Runner UI |
+| `scripts/version.mjs` | Offline build-time version stamper (tag / beta-[hash]) |
 
 ## Install
 

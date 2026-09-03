@@ -1,13 +1,8 @@
 import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
-import type { McpProbe, ProbeContext, McpServer } from "./types.server";
-
-function redact(text: string): string {
-  return text
-    .replace(/"([^"]*(?:token|secret|key|password|auth)[^"]*)"\s*:\s*"[^"]*"/gi, '"$1": "•••"')
-    .replace(/(token|secret|key|password|auth)=[^\s"']+/gi, "$1=•••");
-}
+import type { McpProbe, ProbeContext, McpServer } from "../discovery/types";
+import { redact } from "../discovery/extract";
 
 function stripAnsi(s: string): string {
   return s.replace(/\x1b\[[0-9;]*m/g, "");
@@ -61,25 +56,86 @@ export const opencodeProbe: McpProbe = {
       let err = "";
       child.stdout.on("data", (d) => (out += d.toString()));
       child.stderr.on("data", (d) => (err += d.toString()));
-      child.on("error", (e) => resolve({ servers: [], error: e.message }));
+      child.on("error", (e) =>
+        resolve({
+          servers: [],
+          error: e.message,
+          steps: [
+            {
+              target: "opencode mcp list (CLI)",
+              status: "error",
+              details: `Failed to spawn CLI: ${e.message}`,
+              contentPreview: null,
+            },
+          ],
+        }),
+      );
       child.on("close", (code) => {
         if (code !== 0 && !out) {
-          resolve({ servers: [], error: err || `opencode mcp list exited ${code}` });
+          const msg = err || `opencode mcp list exited ${code}`;
+          resolve({
+            servers: [],
+            error: msg,
+            steps: [
+              {
+                target: "opencode mcp list (CLI)",
+                status: "error",
+                details: msg,
+                contentPreview: null,
+              },
+            ],
+          });
           return;
         }
         try {
           const servers = parseOpencodeMcpList(out, cfgPath);
-          resolve({ servers, error: null });
+          resolve({
+            servers,
+            error: null,
+            steps: [
+              {
+                target: "opencode mcp list (CLI)",
+                status: "found",
+                details: `CLI returned ${servers.length} active server(s)`,
+                contentPreview: redact(out.slice(0, 1000)),
+              },
+            ],
+          });
         } catch (e) {
-          resolve({ servers: [], error: e instanceof Error ? e.message : String(e) });
+          const msg = e instanceof Error ? e.message : String(e);
+          resolve({
+            servers: [],
+            error: msg,
+            steps: [
+              {
+                target: "opencode mcp list (CLI)",
+                status: "error",
+                details: msg,
+                contentPreview: redact(out.slice(0, 1000)),
+              },
+            ],
+          });
         }
       });
       setTimeout(() => {
         try {
           child.kill();
         } catch {}
-        resolve({ servers: [], error: "opencode mcp list timeout" });
+        resolve({
+          servers: [],
+          error: "opencode mcp list timeout",
+          steps: [
+            {
+              target: "opencode mcp list (CLI)",
+              status: "error",
+              details: "Command timed out after 5000ms",
+              contentPreview: null,
+            },
+          ],
+        });
       }, 5000);
     });
   },
 };
+
+export default opencodeProbe;

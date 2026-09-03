@@ -5,7 +5,8 @@ import path from "node:path";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import type { McpServerSchema } from "./mcp.shared";
 import { z } from "zod";
-import { probeForProvider } from "./providers/registry.server";
+import { probeForProvider } from "./providers";
+import { PLUGIN_VERSION } from "./version";
 // Bundled health — SDK inlined so `paseo plugin add` doesn't need to resolve @modelcontextprotocol/sdk
 import { checkMany, checkMcpServerHealth, callMcpServerTool } from "./health/health.bundled.mjs";
 
@@ -243,91 +244,45 @@ export function createDiagnoseMcpHandler() {
       });
     }
 
-    // 2. Check Provider Probe & File Candidates
+    // 2. Run Provider Probe & Collect Diagnostic Steps Polymorphically
     const probe = probeForProvider(agent.provider);
     let discoveredServerCount = 0;
     let probeError: string | null = null;
 
     if (probe) {
-      // Gather file candidates for known file-based providers
-      const candidatePaths: string[] = [];
-      if (agent.provider === "pi") {
-        candidatePaths.push(
-          path.join(home, ".config", "mcp", "mcp.json"),
-          path.join(home, ".agents", "mcp.json"),
-          path.join(home, ".agents", "mcp", "mcp.json"),
-          path.join(home, ".pi", "agent", "mcp.json"),
-          path.join(home, ".pi", "mcp.json"),
-          path.join(home, ".pi", ".mcp.json"),
-          path.join(agent.cwd, "mcp.json"),
-          path.join(agent.cwd, ".mcp.json"),
-          path.join(agent.cwd, ".pi", "mcp.json"),
-          path.join(agent.cwd, ".pi", ".mcp.json"),
-        );
-      } else if (agent.provider === "claude") {
-        candidatePaths.push(
-          path.join(home, ".claude.json"),
-          path.join(home, ".claude", "settings.json"),
-          path.join(agent.cwd, ".claude.json"),
-        );
-      } else if (agent.provider === "codex") {
-        candidatePaths.push(path.join(home, ".codex", "config.toml"));
-      }
-
-      for (const cp of candidatePaths) {
-        const exists = existsSync(cp);
-        if (exists) {
-          try {
-            const raw = await readFile(cp, "utf8");
-            let parseInfo = "";
-            try {
-              if (cp.endsWith(".json")) {
-                const parsed = JSON.parse(raw) as Record<string, unknown>;
-                const mcp = (parsed.mcpServers ?? parsed["mcp-servers"] ?? {}) as Record<string, unknown>;
-                const names = Object.keys(mcp);
-                parseInfo = ` · Valid JSON (${names.length} server(s): ${names.join(", ") || "none"})`;
-              } else if (cp.endsWith(".toml")) {
-                const names = [...raw.matchAll(/^\s*\[mcp_servers\.([^\]\s]+)/gm)].map((m) => m[1]);
-                parseInfo = ` · Valid TOML (${names.length} server(s): ${names.join(", ") || "none"})`;
-              }
-            } catch (syntaxErr) {
-              parseInfo = ` · ⚠️ Syntax/Parse Warning: ${syntaxErr instanceof Error ? syntaxErr.message : String(syntaxErr)}`;
-            }
-
-            steps.push({
-              target: cp,
-              status: "found",
-              details: `File exists (${raw.length} bytes)${parseInfo}`,
-              contentPreview: redact(raw.slice(0, 1000)),
-            });
-          } catch (e) {
-            steps.push({
-              target: cp,
-              status: "error",
-              details: e instanceof Error ? e.message : String(e),
-              contentPreview: null,
-            });
-          }
-        } else {
-          steps.push({
-            target: cp,
-            status: "missing",
-            details: "File not found",
-            contentPreview: null,
-          });
-        }
-      }
-
       try {
-        const result = await probe.probe({ agentId: input.agentId, provider: agent.provider, cwd: agent.cwd });
+        const result = await probe.probe({
+          agentId: input.agentId,
+          provider: agent.provider,
+          cwd: agent.cwd,
+          sessionId: (agent as Record<string, unknown>).sessionId as string | undefined,
+        });
         discoveredServerCount = result.servers.length;
         if (result.error) probeError = result.error;
+        if (result.steps && result.steps.length > 0) {
+          steps.push(...result.steps);
+        }
       } catch (e) {
         probeError = e instanceof Error ? e.message : String(e);
+        steps.push({
+          target: `Provider Probe (${probe.id})`,
+          status: "error",
+          details: probeError,
+          contentPreview: null,
+        });
       }
+    } else {
+      steps.push({
+        target: `Provider Probe (${agent.provider})`,
+        status: "missing",
+        details: "No probe found matching this provider in registry",
+        contentPreview: null,
+      });
     }
 
     return {
+      report: "Paseo Provider MCP Probe Diagnostic",
+      version: PLUGIN_VERSION,
       provider: agent.provider,
       cwd: agent.cwd,
       probeId: probe?.id ?? null,
