@@ -65,14 +65,20 @@ See the complete step-by-step guide in the [write-mcp-provider skill](.agents/sk
 | `scripts/version.mjs` | Offline build-time version stamper (tag / beta-[hash]) |
 | `docs/TEST_METHODOLOGY.md` | Test procedures, adapter verification, and QA methodology |
 
-## Install
+## Install & Updates
 
 ```bash
-# from this checkout (keeps path-linked, reload on start)
+# from git (recommended)
+paseo plugin add xpufx/paseo-mcp-tools
+
+# update to latest release
+paseo plugin update mcp-tools
+
+# or from a local checkout (path-linked for development)
 paseo plugin install "$PWD"
 
-# or from git
-paseo plugin add xpufx/paseo-mcp-tools
+# reload daemon process after local edits
+paseo plugin reload mcp-tools
 ```
 
-`pluginsEnabled: true` required. `paseo plugin reload mcp-tools` after edits; `paseo plugin logs mcp-tools` for errors. Failed reload stays failed (Paseo doesn't restore).
+`pluginsEnabled: true` required. Use `paseo plugin logs mcp-tools` for diagnostics and runtime logs. Failed reload stays failed (Paseo doesn't restore).
