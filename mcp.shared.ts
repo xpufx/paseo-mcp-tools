@@ -56,12 +56,12 @@ export const listMcp = defineRpc({
 });
 
 export const ToolPropertySchema = z.object({
-  type: z.string().optional(),
+  type: z.union([z.string(), z.array(z.string())]).optional(),
   description: z.string().optional(),
   default: z.any().optional(),
-  enum: z.array(z.string()).optional(),
-  items: z.object({ type: z.string().optional() }).optional(),
-});
+  enum: z.array(z.any()).optional(),
+  items: z.any().optional(),
+}).passthrough();
 
 export const ToolInfoSchema = z.object({
   name: z.string(),
@@ -70,7 +70,7 @@ export const ToolInfoSchema = z.object({
     type: z.string().optional(),
     properties: z.record(z.string(), ToolPropertySchema).optional(),
     required: z.array(z.string()).optional(),
-  }).optional(),
+  }).passthrough().optional(),
 });
 
 export type ToolInfo = z.infer<typeof ToolInfoSchema>;

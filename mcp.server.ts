@@ -6,6 +6,7 @@ import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import type { McpServerSchema } from "./mcp.shared";
 import { z } from "zod";
 import { probeForProvider } from "./providers";
+import { paseo as paseoProbe } from "./providers/catalog";
 import { PLUGIN_VERSION } from "./version";
 // Bundled health — SDK inlined so `paseo plugin add` doesn't need to resolve @modelcontextprotocol/sdk
 import { checkMany, checkMcpServerHealth, callMcpServerTool } from "./health/health.bundled.mjs";
@@ -107,6 +108,13 @@ export async function discoverLiveServers(
   let error: string | null = null;
 
   try {
+    const paseoRes = await paseoProbe.probe({ agentId, provider: "paseo", cwd: agent.cwd });
+    for (const s of paseoRes.servers) {
+      if (!servers.some((existing) => existing.id === s.id || existing.name === s.name)) {
+        servers.push(s);
+      }
+    }
+
     const record = await findStoredRecord(agentId);
     const cfg = (record?.config ?? {}) as Record<string, unknown>;
     const mcpServers = (cfg.mcpServers ?? {}) as Record<string, unknown>;

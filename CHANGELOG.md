@@ -2,6 +2,25 @@
 
 All notable changes to `paseo-mcp-tools` are documented in this file.
 
+## [v0.1.3] - 2026-09-03
+
+### Added
+- **Paseo Built-in Host MCP Discovery & Execution** (`providers/paseo.ts`):
+  - Added dedicated probe discovering Paseo's live host daemon control plane (`/mcp/agents?callerAgentId=...`).
+  - Displays as a first-class MCP server (`Paseo (Builtin)`) with live health checks and latency.
+  - Exposes all 61 live Paseo tools (workspaces, terminals, schedules, browser automation, agent orchestration) with full interactive execution in the Tool Runner.
+- **Real-Time Tool Search on Server Detail Page** (`pill.client.tsx`):
+  - Added sticky search/filter box above the tools list to filter tools instantly by name and description.
+  - Displays dynamic match counter (`(X of Y)`) and clear button.
+- **Testing & Methodology Documentation** (`docs/TEST_METHODOLOGY.md`):
+  - Comprehensive documentation covering adapter contracts, configuration precedence, transport checks, and live reload flows.
+
+### Fixed
+- **JSON Schema Draft-07 Union Type Support** (`mcp.shared.ts` & `pill.client.tsx`):
+  - Updated `ToolPropertySchema` to support array/union types (e.g. `["string", "null"]`) and `.passthrough()`, preventing Zod RPC rejection on rich schemas like `update_schedule`.
+  - Cleaned up parameter UI rendering and argument parsing for union types (`(string | null)`).
+- Removed legacy static, non-functional 18-tool Paseo accordion in favor of the live server detail page.
+
 ## [v0.1.2] - 2026-09-03
 
 ### Added

@@ -32,6 +32,7 @@ Provides an inline UI for checking MCP servers available to an agent session wit
 
 | Provider | Probe Mechanism | Status |
 |---|---|---|
+| **Paseo** (`paseo`) | Built-in host daemon MCP control plane (`~/.paseo/config.json` + live daemon HTTP session) | **Fully tested & verified (60+ tools)** |
 | **Antigravity** (`antigravity`, `antigravity-acp`) | Global `~/.gemini/config/mcp_config.json` + `~/.antigravity/mcp_config.json` | **Fully tested & verified** |
 | **OpenCode** (`opencode`) | Live `opencode mcp list` daemon CLI command + config | **Fully tested & verified** |
 | **Pi** (`pi`) | User canonical `~/.pi/.mcp.json` / project overrides + heuristics | **Fully tested & verified** |

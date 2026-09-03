@@ -36,7 +36,7 @@ function McpModal({
   const [toolArgs, setToolArgs] = useState<Record<string, string>>({});
   const [toolExecuting, setToolExecuting] = useState(false);
   const [toolResult, setToolResult] = useState<{ content: Array<{ type: string; text?: string; [key: string]: unknown }>; isError?: boolean } | null>(null);
-  const [paseoExpanded, setPaseoExpanded] = useState(false);
+  const [toolSearch, setToolSearch] = useState("");
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
   const [diagnosticData, setDiagnosticData] = useState<{
@@ -67,7 +67,6 @@ function McpModal({
     !term || s.name.toLowerCase().includes(term) || s.description.toLowerCase().includes(term);
 
   const servers = (query.data?.servers ?? []).filter(matches);
-  const paseoTools = (query.data?.paseoTools ?? []).filter(matches);
 
   const groupedServers = useMemo(() => {
     const m = new Map<string, typeof servers>();
@@ -79,18 +78,22 @@ function McpModal({
     return [...m.entries()];
   }, [servers]);
 
-  const groupedTools = useMemo(() => {
-    const m = new Map<string, typeof paseoTools>();
-    for (const t of paseoTools) {
-      if (!m.has(t.category)) m.set(t.category, []);
-      m.get(t.category)!.push(t);
-    }
-    return [...m.entries()];
-  }, [paseoTools]);
+  const filteredTools = useMemo(() => {
+    if (!health?.tools) return [];
+    if (!toolSearch.trim()) return health.tools;
+    const q = toolSearch.toLowerCase().trim();
+    return health.tools.filter((toolName) => {
+      if (toolName.toLowerCase().includes(q)) return true;
+      const details = health.toolDetails?.find((d) => d.name === toolName);
+      if (details?.description?.toLowerCase().includes(q)) return true;
+      return false;
+    });
+  }, [health?.tools, health?.toolDetails, toolSearch]);
 
   const openDetail = useCallback(
     async (id: string) => {
       setSelected(id);
+      setToolSearch("");
       setLoadingDetail(true);
       try {
         const d = await callRead({ agentId, serverId: id });
@@ -253,7 +256,8 @@ function McpModal({
     const props = activeTool.inputSchema?.properties ?? {};
     for (const [key, val] of Object.entries(toolArgs)) {
       if (!val && !required.includes(key)) continue;
-      const type = props[key]?.type;
+      const typeRaw = props[key]?.type;
+      const type = Array.isArray(typeRaw) ? typeRaw.find((t) => t !== "null") ?? typeRaw[0] : typeRaw;
       if (type === "number" || type === "integer") {
         const n = Number(val);
         parsedArgs[key] = isNaN(n) ? val : n;
@@ -435,7 +439,7 @@ function McpModal({
         ) : selected ? (
           <View style={{ gap: 12, padding: 16 }}>
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-              <Pressable onPress={() => { setSelected(null); setDetail(null); }}>
+              <Pressable onPress={() => { setSelected(null); setDetail(null); setToolSearch(""); }}>
                 <Text style={{ color: theme.colors.accent }}>← Back to list</Text>
               </Pressable>
               <Pressable
@@ -510,7 +514,9 @@ function McpModal({
                               <Text style={{ color: theme.colors.foregroundMuted, fontSize: 10 }}>optional</Text>
                             )}
                             {prop.type ? (
-                              <Text style={{ color: theme.colors.foregroundMuted, fontSize: 10, fontFamily: "monospace" }}>({prop.type})</Text>
+                              <Text style={{ color: theme.colors.foregroundMuted, fontSize: 10, fontFamily: "monospace" }}>
+                                ({Array.isArray(prop.type) ? prop.type.join(" | ") : prop.type})
+                              </Text>
                             ) : null}
                           </View>
                           {prop.description ? (
@@ -523,7 +529,11 @@ function McpModal({
                             placeholderTextColor={theme.colors.foregroundMuted + "80"}
                             autoCapitalize="none"
                             autoCorrect={false}
-                            multiline={prop.type === "object" || prop.type === "array"}
+                            multiline={
+                              prop.type === "object" ||
+                              prop.type === "array" ||
+                              (Array.isArray(prop.type) && (prop.type.includes("object") || prop.type.includes("array")))
+                            }
                             style={{
                               color: theme.colors.foreground,
                               borderWidth: 1,
@@ -629,13 +639,37 @@ function McpModal({
                     ) : null}
                     {health.tools && health.tools.length > 0 ? (
                       <View style={{ borderWidth: 1, borderColor: theme.colors.foregroundMuted + "20", borderRadius: 6, padding: 10, backgroundColor: theme.colors.foregroundMuted + "08", gap: 8 }}>
-                        <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontWeight: "700", textTransform: "uppercase" }}>
-                          Available Tools ({health.tools.length}) — tap to run
-                        </Text>
-                        <View style={{ gap: 6 }}>
-                          {health.tools.map((toolName) => {
-                            const details = health?.toolDetails?.find((d) => d.name === toolName);
-                            return (
+                        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                          <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontWeight: "700", textTransform: "uppercase" }}>
+                            Available Tools ({filteredTools.length}{filteredTools.length !== health.tools.length ? ` of ${health.tools.length}` : ""}) — tap to run
+                          </Text>
+                        </View>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: theme.colors.foregroundMuted + "10", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18" }}>
+                          <Icon name="Search" size={12} color={theme.colors.foregroundMuted} />
+                          <TextInput
+                            value={toolSearch}
+                            onChangeText={setToolSearch}
+                            placeholder="Filter tools by name or description..."
+                            placeholderTextColor={theme.colors.foregroundMuted + "80"}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            style={{ flex: 1, color: theme.colors.foreground, fontSize: 12, padding: 0 }}
+                          />
+                          {toolSearch ? (
+                            <Pressable onPress={() => setToolSearch("")} hitSlop={6}>
+                              <Icon name="X" size={12} color={theme.colors.foregroundMuted} />
+                            </Pressable>
+                          ) : null}
+                        </View>
+                        {filteredTools.length === 0 ? (
+                          <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, fontStyle: "italic", paddingVertical: 4 }}>
+                            No tools match &quot;{toolSearch}&quot;
+                          </Text>
+                        ) : (
+                          <View style={{ gap: 6 }}>
+                            {filteredTools.map((toolName) => {
+                              const details = health?.toolDetails?.find((d) => d.name === toolName);
+                              return (
                               <Pressable
                                 key={toolName}
                                 onPress={() => openToolRunner(toolName)}
@@ -668,6 +702,7 @@ function McpModal({
                             );
                           })}
                         </View>
+                        )}
                       </View>
                     ) : null}
                   </View>
@@ -745,7 +780,7 @@ function McpModal({
               <Text style={{ color: theme.colors.statusDanger }}>{(query.error as Error).message}</Text>
             ) : (
               <View>
-                {servers.length === 0 && paseoTools.length === 0 ? (
+                {servers.length === 0 ? (
                   <Text style={{ color: theme.colors.foregroundMuted }}>{term ? "No matches." : "No MCP servers found."}</Text>
                 ) : null}
                 {groupedServers.map(([label, items]) => (
@@ -794,33 +829,6 @@ function McpModal({
                   <Text style={{ color: theme.colors.foregroundMuted, fontSize: 10, marginTop: 12, fontFamily: "monospace" }}>{query.data.cwd}</Text>
                 ) : null}
                 {query.data?.error ? <Text style={{ color: theme.colors.statusDanger, fontSize: 11, marginTop: 6 }}>{query.data.error}</Text> : null}
-                <View style={{ marginTop: 16, borderTopWidth: 1, borderTopColor: theme.colors.foregroundMuted + "18", paddingTop: 8 }}>
-                  <Pressable
-                    onPress={() => setPaseoExpanded((v) => !v)}
-                    style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 8 }}
-                  >
-                    <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, textTransform: "uppercase" }}>
-                      Paseo catalog · {paseoTools.length} {paseoExpanded ? "" : "— tap to expand"}
-                    </Text>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                      <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>{paseoExpanded ? "Hide" : "Show"}</Text>
-                      <Icon name={paseoExpanded ? "ChevronUp" : "ChevronDown"} size={12} color={theme.colors.foregroundMuted} />
-                    </View>
-                  </Pressable>
-                  {paseoExpanded
-                    ? groupedTools.map(([cat, items]) => (
-                        <View key={cat} style={{ marginTop: 10 }}>
-                          <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, textTransform: "uppercase", marginBottom: 6 }}>Paseo · {cat}</Text>
-                          {items.map((t) => (
-                            <View key={t.name} style={{ paddingVertical: 4 }}>
-                              <Text style={{ color: theme.colors.foreground, fontSize: 13, fontWeight: "500" }}>{t.name}</Text>
-                              <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>{t.description}</Text>
-                            </View>
-                          ))}
-                        </View>
-                      ))
-                    : null}
-                </View>
               </View>
             )}
           </View>
