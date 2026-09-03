@@ -11,12 +11,12 @@ Provides an inline UI for checking MCP servers available to an agent session wit
 ## What it does
 
 - **Pill** above the composer shows `MCP n` (live servers for that agent). Badge updates via `mcp.list`, shared between pill and modal.
-- **Live discovery** per-CLI via isolated `providers/<id>.server.ts` (opencode → `opencode mcp list`, claude → `~/.claude.json` live, etc.) + Paseo-injected `StoredAgentRecord.mcpServers`. Groups by `source.label`, dedupes by name.
+- **Live discovery** per-CLI via isolated `providers/<id>.ts` (`opencode` → `opencode mcp list`, `claude` → `~/.claude.json` live, `antigravity` → `~/.gemini/config/mcp_config.json`, etc.) + Paseo-injected `StoredAgentRecord.mcpServers`. Groups by `source.label`, dedupes by name.
+- **Paseo Built-in Host MCP**: Automatically discovers Paseo's host daemon control plane (`/mcp/agents?callerAgentId=...`) as a first-class MCP server (`Paseo (Builtin)`), exposing all 60+ live tools (workspaces, browser automation, schedules, terminals, agent orchestration).
 - **Detail & Live Health**: Server tap reveals real-time status dots, latency, server instructions, and full tool declarations.
-- **Interactive Tool Runner (User Execution)**: Users can execute any discovered MCP tool directly from the UI without prompting the agent. Features a dynamic schema-driven form with `*REQUIRED` validation, type coercion (boolean, number, object, array), live tool execution via host RPC (`mcp.call_tool`), and output inspection with 1-tap clipboard copying.
-- **Paseo catalog** collapsed at bottom (18 tools) — tap to expand.
-- **Search** filters servers + tools client-side.
-- **Diagnostics**: Full probe checklist verifying paths, permissions, and agent records across hosts.
+- **Interactive Tool Runner (User Execution)**: Users can execute any discovered MCP tool directly from the UI without prompting the agent. Features a dynamic schema-driven form with `*REQUIRED` validation, type coercion (boolean, number, object, array, union/nullable types), live tool execution via host RPC (`mcp.call_tool`), and output inspection with 1-tap clipboard copying.
+- **Real-Time Tool Search**: Server Detail view features a real-time search input filtering across tool names and descriptions, making servers with large command sets (like Paseo, Forgejo, Chrome DevTools) fast and easy to navigate.
+- **Diagnostics**: Full polymorphic probe checklist verifying paths, permissions, and agent records across hosts.
 
 ## Screenshots
 
@@ -57,11 +57,13 @@ See the complete step-by-step guide in the [write-mcp-provider skill](.agents/sk
 | `discovery/extract.ts` | Universal heuristic MCP parser (JSON/JSONC, comments, trailing commas, URL safe) & candidate discovery |
 | `discovery/types.ts` | Core contracts (`McpProbe`, `ProbeContext`, `ProbeResult`) |
 | `providers/<id>.ts` | Per-CLI live probe — isolated, contract `McpProbe` (`antigravity.ts`, `claude.ts`, etc.) |
+| `providers/paseo.ts` | Dedicated host daemon probe discovering Paseo control plane & tools |
 | `providers/catalog.ts` | 1-line re-export catalog for zero-boilerplate probe registration |
 | `health/health.server.ts` | Generic MCP SDK client — `instructions`, schema-aware `tools`, and `callMcpServerTool` |
 | `mcp-query.client.tsx` | `useMcpQuery` shared pill/modal, 30m timer + manual Refresh |
-| `pill.client.tsx` | Pill, modal, server details, diagnostics, and interactive Tool Runner UI |
+| `pill.client.tsx` | Pill, modal, server details, diagnostics, real-time search, and interactive Tool Runner UI |
 | `scripts/version.mjs` | Offline build-time version stamper (tag / beta-[hash]) |
+| `docs/TEST_METHODOLOGY.md` | Test procedures, adapter verification, and QA methodology |
 
 ## Install
 
