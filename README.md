@@ -12,15 +12,21 @@ Provides an inline UI for checking MCP servers available to an agent session wit
 
 - **Pill** above the composer shows `MCP n` (live servers for that agent). Badge updates via `mcp.list`, shared between pill and modal.
 - **Live discovery** per-CLI via isolated `providers/<id>.server.ts` (opencode → `opencode mcp list`, claude → `~/.claude.json` live, etc.) + Paseo-injected `StoredAgentRecord.mcpServers`. Groups by `source.label`, dedupes by name.
+- **Detail & Live Health**: Server tap reveals real-time status dots, latency, server instructions, and full tool declarations.
+- **Interactive Tool Runner (User Execution)**: Users can execute any discovered MCP tool directly from the UI without prompting the agent. Features a dynamic schema-driven form with `*REQUIRED` validation, type coercion (boolean, number, object, array), live tool execution via host RPC (`mcp.call_tool`), and output inspection with 1-tap clipboard copying.
 - **Paseo catalog** collapsed at bottom (18 tools) — tap to expand.
 - **Search** filters servers + tools client-side.
-- **Detail** tap → `mcp.read` (redacted) + live `mcp.health` → `instructions` + `tools` via generic health client.
+- **Diagnostics**: Full probe checklist verifying paths, permissions, and agent records across hosts.
 
 ## Screenshots
 
-| MCP Overview & Status | Server Detail & Live Health | Host Probe Diagnostics |
-| :---: | :---: | :---: |
-| <img src="screenshots/paseo-mcp-tools-main.png" width="100%" alt="MCP Servers & Tools Overview" /> | <img src="screenshots/paseo-mcp-tools-detail.png" width="100%" alt="Server Details & Health" /> | <img src="screenshots/paseo-mcp-tools-diagnosis.png" width="100%" alt="Host Diagnostics" /> |
+| MCP Overview & Status | Server Detail & Live Health |
+| :---: | :---: |
+| <img src="screenshots/paseo-mcp-tools-main.png" width="100%" alt="MCP Servers & Tools Overview" /> | <img src="screenshots/paseo-mcp-tools-detail.png" width="100%" alt="Server Details & Health" /> |
+
+| Interactive Tool Runner & Execution | Host Probe Diagnostics |
+| :---: | :---: |
+| <img src="screenshots/paseo-mcp-tools-execute.png" width="100%" alt="Interactive Tool Execution & Parameters" /> | <img src="screenshots/paseo-mcp-tools-diagnosis.png" width="100%" alt="Host Diagnostics" /> |
 
 ## Supported Providers
 
@@ -43,14 +49,14 @@ See the complete step-by-step guide in the [write-mcp-provider skill](.agents/sk
 
 | File | Owns |
 |---|---|
-| `index.ts` | Wiring only — `handle(mcp.list)`, `handle(mcp.read)`, `handle(mcp.health)`, `handle(mcp.diagnose)`, `addClientSide` |
-| `mcp.shared.ts` | zod RPC contracts & shared types (client/server boundary safe) |
-| `mcp.server.ts` | `discoverLiveServers()` (with `${provider}:${cwd}` cache) + handlers |
+| `index.ts` | Wiring only — `handle(mcp.list)`, `handle(mcp.read)`, `handle(mcp.health)`, `handle(mcp.call_tool)`, `handle(mcp.diagnose)`, `addClientSide` |
+| `mcp.shared.ts` | zod RPC contracts & shared types (`ToolInfoSchema`, `callMcpTool`, etc.) |
+| `mcp.server.ts` | `discoverLiveServers()`, tool runner execution bridge, and diagnostic handlers |
 | `providers/extract.server.ts` | Universal heuristic MCP parser (JSON/JSONC, comments, trailing commas, URL safe) |
 | `providers/<id>.server.ts` | Per-CLI live probe — isolated, contract `McpProbe` |
-| `health/health.server.ts` | Generic `Client` health (stdio/http) — `instructions` + `tools` |
+| `health/health.server.ts` | Generic MCP SDK client — `instructions`, schema-aware `tools`, and `callMcpServerTool` |
 | `mcp-query.client.tsx` | `useMcpQuery` shared pill/modal, 30m timer + manual Refresh |
-| `pill.client.tsx` | Pill + `McpModal` (search, Last check, Refresh, Diagnose, detail, collapsed Paseo) |
+| `pill.client.tsx` | Pill, modal, server details, diagnostics, and interactive Tool Runner UI |
 
 ## Install
 

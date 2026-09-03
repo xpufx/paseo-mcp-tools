@@ -7,7 +7,7 @@ import type { McpServerSchema } from "./mcp.shared";
 import { z } from "zod";
 import { probeForProvider } from "./providers/registry.server";
 // Bundled health — SDK inlined so `paseo plugin add` doesn't need to resolve @modelcontextprotocol/sdk
-import { checkMany, checkMcpServerHealth } from "./health/health.bundled.mjs";
+import { checkMany, checkMcpServerHealth, callMcpServerTool } from "./health/health.bundled.mjs";
 
 type McpServer = z.infer<typeof McpServerSchema>;
 
@@ -173,6 +173,37 @@ export function createHealthHandler() {
     }
     const results = await checkMany(targets, { timeoutMs: 7000, includeTools: true });
     return { results, error };
+  };
+}
+
+export function createCallMcpToolHandler() {
+  return async (
+    input: { agentId: string; serverId: string; toolName: string; arguments: Record<string, unknown> },
+    context: PluginHandlerContext,
+  ) => {
+    const { servers } = await discoverLiveServers(input.agentId, context);
+    const server = servers.find((s) => s.id === input.serverId);
+    if (!server) {
+      throw new Error(`MCP server not found in this session: ${input.serverId}`);
+    }
+    try {
+      const result = await (callMcpServerTool as (s: McpServer, t: string, a: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text?: string; [key: string]: unknown }>; isError?: boolean }>)(
+        server,
+        input.toolName,
+        input.arguments,
+      );
+      return {
+        content: result.content ?? [],
+        isError: result.isError,
+        error: null,
+      };
+    } catch (e) {
+      return {
+        content: [{ type: "text", text: e instanceof Error ? e.message : String(e) }],
+        isError: true,
+        error: e instanceof Error ? e.message : String(e),
+      };
+    }
   };
 }
 

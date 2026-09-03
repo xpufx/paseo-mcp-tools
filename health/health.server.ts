@@ -10,6 +10,22 @@ import type { McpServer } from "../providers/types.server";
 
 export type HealthStatus = "healthy" | "degraded" | "down" | "unknown";
 
+export interface ToolInfo {
+  name: string;
+  description?: string;
+  inputSchema?: {
+    type?: string;
+    properties?: Record<string, {
+      type?: string;
+      description?: string;
+      default?: unknown;
+      enum?: string[];
+      items?: { type?: string };
+    }>;
+    required?: string[];
+  };
+}
+
 export interface HealthResult {
   serverId: string;
   name: string;
@@ -17,9 +33,15 @@ export interface HealthResult {
   latencyMs: number;
   toolCount: number | null;
   tools: string[] | null;
+  toolDetails?: ToolInfo[] | null;
   instructions: string | null;
   error: string | null;
   checkedAt: string;
+}
+
+export interface ToolCallResult {
+  content: Array<{ type: string; text?: string; [key: string]: unknown }>;
+  isError?: boolean;
 }
 
 export interface HealthCheckOptions {
@@ -109,6 +131,7 @@ export async function checkMcpServerHealth(
 
     // Healthy means we got initialize + tools/list. Degraded means connected but list failed.
     let tools: string[] | null = null;
+    let toolDetails: ToolInfo[] | null = null;
     let toolCount: number | null = null;
     let status: HealthStatus = "healthy";
     let error: string | null = null;
@@ -116,8 +139,13 @@ export async function checkMcpServerHealth(
     if (opts.includeTools !== false) {
       try {
         const res = await withTimeout(client.listTools(), timeoutMs, "listTools");
-        const list = (res as { tools?: Array<{ name: string }> }).tools ?? [];
+        const list = (res as { tools?: Array<{ name: string; description?: string; inputSchema?: ToolInfo["inputSchema"] }> }).tools ?? [];
         tools = list.map((t) => t.name);
+        toolDetails = list.map((t) => ({
+          name: t.name,
+          description: t.description,
+          inputSchema: t.inputSchema,
+        }));
         toolCount = tools.length;
       } catch (e) {
         // Connected but can't list tools = degraded
@@ -139,6 +167,7 @@ export async function checkMcpServerHealth(
       latencyMs,
       toolCount,
       tools,
+      toolDetails,
       instructions,
       error,
       checkedAt,
@@ -155,10 +184,38 @@ export async function checkMcpServerHealth(
       latencyMs,
       toolCount: null,
       tools: null,
+      toolDetails: null,
       instructions: null,
       error: e instanceof Error ? e.message : String(e),
       checkedAt,
     };
+  }
+}
+
+export async function callMcpServerTool(
+  server: McpServer,
+  toolName: string,
+  args: Record<string, unknown> = {},
+  timeoutMs = 15000,
+): Promise<ToolCallResult> {
+  const resolved = transportFor(server);
+  if (!resolved) {
+    throw new Error(`Cannot execute tool on ${server.name}: unknown transport`);
+  }
+
+  const client = new Client({ name: "paseo-mcp-runner", version: "1.0.0" }, { capabilities: {} });
+  try {
+    await withTimeout(client.connect(resolved.transport as never), timeoutMs, "connect");
+    const result = await withTimeout(
+      client.callTool({ name: toolName, arguments: args }),
+      timeoutMs,
+      `callTool:${toolName}`,
+    );
+    return result as ToolCallResult;
+  } finally {
+    try {
+      await client.close();
+    } catch {}
   }
 }
 

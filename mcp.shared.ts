@@ -55,6 +55,26 @@ export const listMcp = defineRpc({
   }),
 });
 
+export const ToolPropertySchema = z.object({
+  type: z.string().optional(),
+  description: z.string().optional(),
+  default: z.any().optional(),
+  enum: z.array(z.string()).optional(),
+  items: z.object({ type: z.string().optional() }).optional(),
+});
+
+export const ToolInfoSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  inputSchema: z.object({
+    type: z.string().optional(),
+    properties: z.record(z.string(), ToolPropertySchema).optional(),
+    required: z.array(z.string()).optional(),
+  }).optional(),
+});
+
+export type ToolInfo = z.infer<typeof ToolInfoSchema>;
+
 export const HealthResultSchema = z.object({
   serverId: z.string(),
   name: z.string(),
@@ -62,6 +82,7 @@ export const HealthResultSchema = z.object({
   latencyMs: z.number(),
   toolCount: z.number().nullable(),
   tools: z.array(z.string()).nullable(),
+  toolDetails: z.array(ToolInfoSchema).nullable().optional(),
   instructions: z.string().nullable(),
   error: z.string().nullable(),
   checkedAt: z.string(),
@@ -73,6 +94,21 @@ export const checkMcpHealth = defineRpc({
   output: z.object({
     results: z.array(HealthResultSchema),
     error: z.string().nullable(),
+  }),
+});
+
+export const callMcpTool = defineRpc({
+  name: "mcp.call_tool",
+  input: z.object({
+    agentId: z.string(),
+    serverId: z.string(),
+    toolName: z.string(),
+    arguments: z.record(z.string(), z.any()),
+  }),
+  output: z.object({
+    content: z.array(z.any()),
+    isError: z.boolean().optional(),
+    error: z.string().nullable().optional(),
   }),
 });
 

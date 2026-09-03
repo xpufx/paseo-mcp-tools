@@ -19718,7 +19718,7 @@ var StreamableHTTPClientTransport = class {
   }
 };
 
-// providers/health.server.ts
+// health/health.server.ts
 function withTimeout(p, ms, label) {
   let t;
   return Promise.race([
@@ -19781,6 +19781,7 @@ async function checkMcpServerHealth(server, opts = {}) {
     } catch {
     }
     let tools = null;
+    let toolDetails = null;
     let toolCount = null;
     let status = "healthy";
     let error2 = null;
@@ -19789,6 +19790,11 @@ async function checkMcpServerHealth(server, opts = {}) {
         const res = await withTimeout(client.listTools(), timeoutMs, "listTools");
         const list = res.tools ?? [];
         tools = list.map((t) => t.name);
+        toolDetails = list.map((t) => ({
+          name: t.name,
+          description: t.description,
+          inputSchema: t.inputSchema
+        }));
         toolCount = tools.length;
       } catch (e) {
         status = "degraded";
@@ -19807,6 +19813,7 @@ async function checkMcpServerHealth(server, opts = {}) {
       latencyMs,
       toolCount,
       tools,
+      toolDetails,
       instructions,
       error: error2,
       checkedAt
@@ -19824,10 +19831,32 @@ async function checkMcpServerHealth(server, opts = {}) {
       latencyMs,
       toolCount: null,
       tools: null,
+      toolDetails: null,
       instructions: null,
       error: e instanceof Error ? e.message : String(e),
       checkedAt
     };
+  }
+}
+async function callMcpServerTool(server, toolName, args = {}, timeoutMs = 15e3) {
+  const resolved = transportFor(server);
+  if (!resolved) {
+    throw new Error(`Cannot execute tool on ${server.name}: unknown transport`);
+  }
+  const client = new Client({ name: "paseo-mcp-runner", version: "1.0.0" }, { capabilities: {} });
+  try {
+    await withTimeout(client.connect(resolved.transport), timeoutMs, "connect");
+    const result = await withTimeout(
+      client.callTool({ name: toolName, arguments: args }),
+      timeoutMs,
+      `callTool:${toolName}`
+    );
+    return result;
+  } finally {
+    try {
+      await client.close();
+    } catch {
+    }
   }
 }
 async function checkMany(servers, opts = {}) {
@@ -19841,6 +19870,7 @@ async function checkMany(servers, opts = {}) {
   return out;
 }
 export {
+  callMcpServerTool,
   checkMany,
   checkMcpServerHealth
 };

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useMcpQuery } from "./mcp-query.client";
 import { useRpc } from "@getpaseo/plugin";
-import { checkMcpHealth, diagnoseMcp, readMcp } from "./mcp.shared";
+import { callMcpTool, checkMcpHealth, diagnoseMcp, readMcp, type ToolInfo } from "./mcp.shared";
 
 const openers = new Map<string, () => void>();
 
@@ -22,14 +22,19 @@ function McpModal({
   const query = useMcpQuery(agentId);
   const callRead = useRpc(readMcp);
   const callHealth = useRpc(checkMcpHealth);
+  const callToolRpc = useRpc(callMcpTool);
   const callDiagnose = useRpc(diagnoseMcp);
   const toast = useToast();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<{ raw: string; redacted: string; path: string } | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [health, setHealth] = useState<{ instructions: string | null; status: "healthy" | "degraded" | "down" | "unknown"; latencyMs: number; toolCount: number | null; tools: string[] | null; error: string | null } | null>(null);
+  const [health, setHealth] = useState<{ instructions: string | null; status: "healthy" | "degraded" | "down" | "unknown"; latencyMs: number; toolCount: number | null; tools: string[] | null; toolDetails?: ToolInfo[] | null; error: string | null } | null>(null);
   const [healthLoading, setHealthLoading] = useState(false);
+  const [activeTool, setActiveTool] = useState<ToolInfo | null>(null);
+  const [toolArgs, setToolArgs] = useState<Record<string, string>>({});
+  const [toolExecuting, setToolExecuting] = useState(false);
+  const [toolResult, setToolResult] = useState<{ content: Array<{ type: string; text?: string; [key: string]: unknown }>; isError?: boolean } | null>(null);
   const [paseoExpanded, setPaseoExpanded] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
@@ -106,6 +111,7 @@ function McpModal({
     latencyMs: number;
     toolCount: number | null;
     tools: string[] | null;
+    toolDetails?: ToolInfo[] | null;
     instructions: string | null;
     error: string | null;
   };
@@ -212,8 +218,83 @@ function McpModal({
     toast.show("Copy not available in this view");
   };
 
+  const openToolRunner = (toolName: string) => {
+    const details = health?.toolDetails?.find((d) => d.name === toolName);
+    const toolObj: ToolInfo = details ?? { name: toolName };
+    setActiveTool(toolObj);
+    const initialArgs: Record<string, string> = {};
+    if (toolObj.inputSchema?.properties) {
+      for (const [key, prop] of Object.entries(toolObj.inputSchema.properties)) {
+        if (prop.default !== undefined) {
+          initialArgs[key] = typeof prop.default === "object" ? JSON.stringify(prop.default) : String(prop.default);
+        } else {
+          initialArgs[key] = "";
+        }
+      }
+    }
+    setToolArgs(initialArgs);
+    setToolResult(null);
+  };
+
+  const handleExecuteTool = async () => {
+    if (!activeTool || !selected) return;
+
+    // Check required fields
+    const required = activeTool.inputSchema?.required ?? [];
+    const missing = required.filter((req) => !toolArgs[req]?.trim());
+    if (missing.length > 0) {
+      toast.error(`Missing required parameter(s): ${missing.join(", ")}`);
+      return;
+    }
+
+    // Convert args to proper types based on schema
+    const parsedArgs: Record<string, unknown> = {};
+    const props = activeTool.inputSchema?.properties ?? {};
+    for (const [key, val] of Object.entries(toolArgs)) {
+      if (!val && !required.includes(key)) continue;
+      const type = props[key]?.type;
+      if (type === "number" || type === "integer") {
+        const n = Number(val);
+        parsedArgs[key] = isNaN(n) ? val : n;
+      } else if (type === "boolean") {
+        parsedArgs[key] = val.toLowerCase() === "true" || val === "1";
+      } else if (type === "array" || type === "object") {
+        try {
+          parsedArgs[key] = JSON.parse(val);
+        } catch {
+          parsedArgs[key] = val;
+        }
+      } else {
+        parsedArgs[key] = val;
+      }
+    }
+
+    setToolExecuting(true);
+    try {
+      const res = await callToolRpc({
+        agentId,
+        serverId: selected,
+        toolName: activeTool.name,
+        arguments: parsedArgs,
+      });
+      setToolResult(res);
+      if (res.isError) {
+        toast.error(`Tool returned an error`);
+      } else {
+        toast.show(`Tool executed successfully`);
+      }
+    } catch (e) {
+      setToolResult({
+        content: [{ type: "text", text: e instanceof Error ? e.message : String(e) }],
+        isError: true,
+      });
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setToolExecuting(false);
+    }
+  };
+
   const lastCheck = query.dataUpdatedAt ? new Date(query.dataUpdatedAt).toLocaleTimeString() : null;
-  const OuterScroll = ScrollView;
 
   return (
     <Modal title="MCP" icon={<Icon name="Plug" />} open={open} onOpenChange={onOpenChange}>
@@ -384,7 +465,139 @@ function McpModal({
                 <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>Copy Debug</Text>
               </Pressable>
             </View>
-            {loadingDetail ? (
+            {activeTool ? (
+              <View style={{ gap: 12 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                  <Pressable onPress={() => { setActiveTool(null); setToolResult(null); }}>
+                    <Text style={{ color: theme.colors.accent }}>← Back to server</Text>
+                  </Pressable>
+                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>
+                    {servers.find((s) => s.id === selected)?.name ?? selected}
+                  </Text>
+                </View>
+
+                <View style={{ padding: 12, borderRadius: 8, backgroundColor: theme.colors.foregroundMuted + "0a", borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", gap: 6 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Icon name="Play" size={14} color={theme.colors.accent} />
+                    <Text style={{ color: theme.colors.foreground, fontSize: 14, fontWeight: "700" }}>{activeTool.name}</Text>
+                  </View>
+                  {activeTool.description ? (
+                    <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, lineHeight: 16 }}>
+                      {activeTool.description}
+                    </Text>
+                  ) : null}
+                </View>
+
+                {/* Parameters Form */}
+                <View style={{ gap: 10 }}>
+                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontWeight: "700", textTransform: "uppercase" }}>
+                    Parameters {activeTool.inputSchema?.properties ? `(${Object.keys(activeTool.inputSchema.properties).length})` : "(0)"}
+                  </Text>
+
+                  {activeTool.inputSchema?.properties && Object.keys(activeTool.inputSchema.properties).length > 0 ? (
+                    Object.entries(activeTool.inputSchema.properties).map(([paramName, prop]) => {
+                      const isRequired = (activeTool.inputSchema?.required ?? []).includes(paramName);
+                      return (
+                        <View key={paramName} style={{ gap: 4 }}>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                            <Text style={{ color: theme.colors.foreground, fontSize: 12, fontWeight: "600" }}>
+                              {paramName}
+                            </Text>
+                            {isRequired ? (
+                              <Text style={{ color: theme.colors.statusDanger, fontSize: 10, fontWeight: "700" }}>*REQUIRED</Text>
+                            ) : (
+                              <Text style={{ color: theme.colors.foregroundMuted, fontSize: 10 }}>optional</Text>
+                            )}
+                            {prop.type ? (
+                              <Text style={{ color: theme.colors.foregroundMuted, fontSize: 10, fontFamily: "monospace" }}>({prop.type})</Text>
+                            ) : null}
+                          </View>
+                          {prop.description ? (
+                            <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>{prop.description}</Text>
+                          ) : null}
+                          <TextInput
+                            value={toolArgs[paramName] ?? ""}
+                            onChangeText={(text) => setToolArgs((prev) => ({ ...prev, [paramName]: text }))}
+                            placeholder={prop.default !== undefined ? String(prop.default) : isRequired ? "Required value..." : "Optional value..."}
+                            placeholderTextColor={theme.colors.foregroundMuted + "80"}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            multiline={prop.type === "object" || prop.type === "array"}
+                            style={{
+                              color: theme.colors.foreground,
+                              borderWidth: 1,
+                              borderColor: isRequired && !(toolArgs[paramName]?.trim())
+                                ? theme.colors.statusDanger + "60"
+                                : theme.colors.foregroundMuted + "40",
+                              borderRadius: 6,
+                              paddingHorizontal: 10,
+                              paddingVertical: 6,
+                              fontSize: 12,
+                              backgroundColor: theme.colors.foregroundMuted + "06",
+                            }}
+                          />
+                        </View>
+                      );
+                    })
+                  ) : (
+                    <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, fontStyle: "italic" }}>
+                      This tool takes no parameters.
+                    </Text>
+                  )}
+
+                  <Pressable
+                    onPress={() => void handleExecuteTool()}
+                    disabled={toolExecuting}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      paddingVertical: 10,
+                      borderRadius: 8,
+                      backgroundColor: theme.colors.accent,
+                      marginTop: 6,
+                      opacity: toolExecuting ? 0.6 : 1,
+                    }}
+                  >
+                    {toolExecuting ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Icon name="Play" size={14} color="#fff" />
+                    )}
+                    <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13 }}>
+                      {toolExecuting ? "Executing tool…" : "Execute Tool"}
+                    </Text>
+                  </Pressable>
+                </View>
+
+                {/* Execution Result */}
+                {toolResult ? (
+                  <View style={{ marginTop: 8, gap: 6, padding: 12, borderRadius: 8, backgroundColor: toolResult.isError ? theme.colors.statusDanger + "12" : theme.colors.foregroundMuted + "0a", borderWidth: 1, borderColor: toolResult.isError ? theme.colors.statusDanger + "40" : theme.colors.foregroundMuted + "20" }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                      <Text style={{ color: toolResult.isError ? theme.colors.statusDanger : theme.colors.statusSuccess, fontSize: 12, fontWeight: "700" }}>
+                        {toolResult.isError ? "✕ Execution Failed" : "✓ Result"}
+                      </Text>
+                      <Pressable
+                        onPress={() => {
+                          const text = toolResult.content.map((c) => c.text ?? JSON.stringify(c)).join("\n\n");
+                          void copy(text);
+                        }}
+                        style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: theme.colors.foregroundMuted + "14" }}
+                      >
+                        <Icon name="Copy" size={10} color={theme.colors.foregroundMuted} />
+                        <Text style={{ color: theme.colors.foregroundMuted, fontSize: 10 }}>Copy</Text>
+                      </Pressable>
+                    </View>
+                    {toolResult.content.map((c, idx) => (
+                      <Text key={idx} selectable style={{ color: theme.colors.foreground, fontSize: 11, fontFamily: "monospace", lineHeight: 16 }}>
+                        {c.text ?? JSON.stringify(c, null, 2)}
+                      </Text>
+                    ))}
+                  </View>
+                ) : null}
+              </View>
+            ) : loadingDetail ? (
               <ActivityIndicator color={theme.colors.foregroundMuted} />
             ) : detail ? (
               <View style={{ gap: 12 }}>
@@ -414,13 +627,46 @@ function McpModal({
                       </View>
                     ) : null}
                     {health.tools && health.tools.length > 0 ? (
-                      <View style={{ borderWidth: 1, borderColor: theme.colors.foregroundMuted + "20", borderRadius: 6, padding: 10, backgroundColor: theme.colors.foregroundMuted + "08" }}>
-                        <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontWeight: "700", textTransform: "uppercase", marginBottom: 6 }}>
-                          Available Tools ({health.tools.length})
+                      <View style={{ borderWidth: 1, borderColor: theme.colors.foregroundMuted + "20", borderRadius: 6, padding: 10, backgroundColor: theme.colors.foregroundMuted + "08", gap: 8 }}>
+                        <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontWeight: "700", textTransform: "uppercase" }}>
+                          Available Tools ({health.tools.length}) — tap to run
                         </Text>
-                        <Text selectable style={{ color: theme.colors.foregroundMuted, fontSize: 12, fontFamily: "monospace", lineHeight: 18 }}>
-                          {health.tools.join(", ")}
-                        </Text>
+                        <View style={{ gap: 6 }}>
+                          {health.tools.map((toolName) => {
+                            const details = health?.toolDetails?.find((d) => d.name === toolName);
+                            return (
+                              <Pressable
+                                key={toolName}
+                                onPress={() => openToolRunner(toolName)}
+                                style={{
+                                  flexDirection: "row",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  padding: 8,
+                                  borderRadius: 6,
+                                  backgroundColor: theme.colors.foregroundMuted + "10",
+                                  borderWidth: 1,
+                                  borderColor: theme.colors.foregroundMuted + "18",
+                                }}
+                              >
+                                <View style={{ flex: 1, gap: 2 }}>
+                                  <Text style={{ color: theme.colors.foreground, fontSize: 12, fontWeight: "600", fontFamily: "monospace" }}>
+                                    {toolName}
+                                  </Text>
+                                  {details?.description ? (
+                                    <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }} numberOfLines={1}>
+                                      {details.description}
+                                    </Text>
+                                  ) : null}
+                                </View>
+                                <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 4, backgroundColor: theme.colors.accent + "20" }}>
+                                  <Icon name="Play" size={10} color={theme.colors.accent} />
+                                  <Text style={{ color: theme.colors.accent, fontSize: 11, fontWeight: "600" }}>Run</Text>
+                                </View>
+                              </Pressable>
+                            );
+                          })}
+                        </View>
                       </View>
                     ) : null}
                   </View>

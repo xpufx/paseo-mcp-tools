@@ -37,4 +37,20 @@ describe("generic health client — works with every MCP without being a server"
     expect(r.error).toBeTruthy();
     expect(r.latencyMs).toBeGreaterThan(0);
   });
+
+  it("callMcpServerTool throws gracefully on unknown transport", async () => {
+    const { callMcpServerTool } = await import("./health.server");
+    const s: McpServer = {
+      id: "test:unknown",
+      name: "unknown",
+      transport: "unknown",
+      source: { kind: "session", label: "test", path: "/tmp" },
+      command: null,
+      url: null,
+      description: "no transport",
+      hasSecrets: false,
+      configPreview: "{}",
+    };
+    await expect(callMcpServerTool(s, "any_tool", {})).rejects.toThrow(/unknown transport/);
+  });
 });
