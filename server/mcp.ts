@@ -3,11 +3,11 @@ import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
-import type { McpServerSchema } from "./mcp.shared";
+import type { McpServerSchema } from "../shared/mcp";
 import { z } from "zod";
 import { probeForProvider } from "./providers";
 import { paseo as paseoProbe } from "./providers/catalog";
-import { PLUGIN_VERSION } from "./version";
+import { PLUGIN_VERSION } from "../shared/version";
 // Bundled health — SDK inlined so `paseo plugin add` doesn't need to resolve @modelcontextprotocol/sdk
 import { checkMany, checkMcpServerHealth, callMcpServerTool } from "./health/health.bundled.mjs";
 

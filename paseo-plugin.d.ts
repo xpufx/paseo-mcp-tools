@@ -247,6 +247,16 @@ declare module "@getpaseo/plugin" {
     | { id: string; title: string; icon: string; keywords?: readonly string[]; context: "global"; onSelect(context: PluginGlobalCommandContext): void | Promise<void> }
     | { id: string; title: string; icon: string; keywords?: readonly string[]; context: "workspace"; onSelect(context: PluginWorkspaceCommandContext): void | Promise<void> }
     | { id: string; title: string; icon: string; keywords?: readonly string[]; context: "agent"; onSelect(context: PluginAgentCommandContext): void | Promise<void> };
+  export interface PluginServerContext {
+    handle<InputSchema extends ZodType, OutputSchema extends ZodType>(
+      contract: PluginRpcContract<InputSchema, OutputSchema>,
+      handler: (
+        input: ZodOutput<InputSchema>,
+        context: PluginHandlerContext,
+      ) => ZodInput<OutputSchema> | Promise<ZodInput<OutputSchema>>,
+    ): void;
+  }
+  export type PluginServerContribution = (server: PluginServerContext) => PluginCleanup;
   export interface PluginContext {
     handle<InputSchema extends ZodType, OutputSchema extends ZodType>(
       contract: PluginRpcContract<InputSchema, OutputSchema>,

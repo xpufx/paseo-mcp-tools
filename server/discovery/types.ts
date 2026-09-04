@@ -1,4 +1,4 @@
-import type { McpServer, DiagnosticStep } from "../mcp.shared";
+import type { McpServer, DiagnosticStep } from "../../shared/mcp";
 
 export type { McpServer, DiagnosticStep };
 

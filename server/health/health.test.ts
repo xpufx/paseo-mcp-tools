@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { checkMcpServerHealth } from "./health.server";
-import type { McpServer } from "../mcp.shared";
+import { checkMcpServerHealth } from "./health";
+import type { McpServer } from "../../shared/mcp";
 
 describe("generic health client — works with every MCP without being a server", () => {
   it("returns unknown for unknown transport", async () => {
@@ -39,7 +39,7 @@ describe("generic health client — works with every MCP without being a server"
   });
 
   it("callMcpServerTool throws gracefully on unknown transport", async () => {
-    const { callMcpServerTool } = await import("./health.server");
+    const { callMcpServerTool } = await import("./health");
     const s: McpServer = {
       id: "test:unknown",
       name: "unknown",

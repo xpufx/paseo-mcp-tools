@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { McpServer } from "../mcp.shared";
+import type { McpServer } from "../../shared/mcp";
 
 // GTD: generic health check that works with *every* MCP.
 // This is a CLIENT — we are not an MCP server, we just dial MCP servers.
@@ -50,7 +50,7 @@ export interface HealthCheckOptions {
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  let t: NodeJS.Timeout;
+  let t: ReturnType<typeof setTimeout>;
   return Promise.race([
     p,
     new Promise<never>((_, reject) => {

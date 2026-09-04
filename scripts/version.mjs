@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
-const targetFile = path.join(rootDir, "version.ts");
+const targetFile = path.join(rootDir, "shared", "version.ts");
 
 function resolveVersion() {
   // 1. Check if exact tag on current commit

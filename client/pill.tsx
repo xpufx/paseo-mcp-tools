@@ -2,10 +2,10 @@ import { Icon, Modal, useToast } from "@getpaseo/plugin/react-native";
 import type { PluginClientContext, PluginComposerPillProps } from "@getpaseo/plugin";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
-import { useMcpQuery } from "./mcp-query.client";
+import { useMcpQuery } from "./mcp-query";
 import { useRpc } from "@getpaseo/plugin";
-import { callMcpTool, checkMcpHealth, diagnoseMcp, readMcp, type ToolInfo } from "./mcp.shared";
-import { PLUGIN_VERSION } from "./version";
+import { callMcpTool, checkMcpHealth, diagnoseMcp, readMcp, type ToolInfo } from "../shared/mcp";
+import { PLUGIN_VERSION } from "../shared/version";
 
 const openers = new Map<string, () => void>();
 

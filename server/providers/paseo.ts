@@ -3,7 +3,7 @@ import path from "node:path";
 import { existsSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import type { McpProbe, ProbeContext, ProbeResult, DiagnosticStep } from "../discovery/types";
-import type { McpServer } from "../mcp.shared";
+import type { McpServer } from "../../shared/mcp";
 
 export async function findStoredAgentRecord(agentId: string): Promise<Record<string, unknown> | null> {
   const base = path.join(os.homedir(), ".paseo", "agents");

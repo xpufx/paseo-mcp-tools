@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useRpc } from "@getpaseo/plugin";
-import { listMcp } from "./mcp.shared";
+import { listMcp } from "../shared/mcp";
 
 export function useMcpQuery(agentId: string) {
   const callList = useRpc(listMcp);
