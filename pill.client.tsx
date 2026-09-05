@@ -1,56 +1,142 @@
-import { Icon, Modal, useToast } from "@getpaseo/plugin/react-native";
-import type { PluginClientContext, PluginComposerPillProps } from "@getpaseo/plugin";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
-import { useMcpQuery } from "./mcp-query.client";
+import { useToast } from "@getpaseo/plugin/react-native";
+import type { PluginClientContext } from "@getpaseo/plugin";
 import { useRpc } from "@getpaseo/plugin";
-import { callMcpTool, checkMcpHealth, diagnoseMcp, readMcp, type ToolInfo } from "./mcp.shared";
+import { useMemo, useState } from "react";
+import { ActivityIndicator, Text, View } from "react-native";
+import {
+  AboutSection,
+  ActionBar,
+  Badge,
+  Button,
+  Card,
+  CodeBlock,
+  EmptyState,
+  FormRow,
+  ModalBody,
+  PluginThemeProvider,
+  SearchInput,
+  StatusDot,
+  Tabs,
+  TextInput,
+  Toggle,
+  copyToClipboard,
+  registerComposerPill,
+  triggerHaptic,
+  usePluginSettings,
+  usePluginTheme,
+  useResponsive,
+  type RenderModalProps,
+  type RenderPillProps,
+  type TabItem,
+} from "paseo-plugin-helper/client";
+import { useMcpHealthQuery, useMcpQuery } from "./mcp-query.client";
+import {
+  callMcpTool,
+  diagnoseMcp,
+  mcpToolsSettingsContract,
+  readMcp,
+  type ToolInfo,
+} from "./mcp.shared";
 import { PLUGIN_VERSION } from "./version";
 
-const openers = new Map<string, () => void>();
+type HealthInfo = {
+  serverId: string;
+  name: string;
+  status: "healthy" | "degraded" | "down" | "unknown";
+  latencyMs: number;
+  toolCount: number | null;
+  tools: string[] | null;
+  toolDetails?: ToolInfo[] | null;
+  instructions: string | null;
+  error: string | null;
+};
 
-function McpModal({
-  agentId,
-  open,
-  onOpenChange,
-  theme,
-}: {
-  agentId: string;
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  theme: PluginComposerPillProps["theme"];
-}) {
+const TABS: TabItem[] = [
+  { id: "servers", label: "Servers", shortLabel: "Servers", icon: "Plug" },
+  { id: "diagnostics", label: "Diagnostics", shortLabel: "Diag", icon: "Activity" },
+  { id: "settings", label: "Settings", shortLabel: "Settings", icon: "Sliders" },
+  { id: "about", label: "About", shortLabel: "About", icon: "Info" },
+];
+
+function McpPillBody(props: RenderPillProps) {
+  const { colors } = usePluginTheme();
+  const { isCompact } = useResponsive();
+  const { data } = useMcpQuery(props.agentId);
+  const n = data?.servers.length ?? 0;
+
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 6 }}>
+      <StatusDot variant={n > 0 ? "success" : "neutral"} />
+      <Text numberOfLines={1} style={{ fontSize: 11, color: colors.foregroundMuted, flexShrink: 1 }}>
+        {isCompact ? (n > 0 ? `${n}` : "MCP") : n > 0 ? `MCP ${n}` : "MCP"}
+      </Text>
+    </View>
+  );
+}
+
+function McpModalContent({ agentId, close, theme, layout }: RenderModalProps) {
+  const { colors } = usePluginTheme();
+  const toast = useToast();
+  const [activeTab, setActiveTab] = useState("servers");
+  const { settings, updateSettings, resetSettings, isUpdating } =
+    usePluginSettings(mcpToolsSettingsContract);
+
   const query = useMcpQuery(agentId);
   const callRead = useRpc(readMcp);
-  const callHealth = useRpc(checkMcpHealth);
   const callToolRpc = useRpc(callMcpTool);
   const callDiagnose = useRpc(diagnoseMcp);
-  const toast = useToast();
+
+  const [modalOpen] = useState(true);
+  const healthQuery = useMcpHealthQuery(agentId, undefined, {
+    isOpen: modalOpen,
+    rate: settings.healthPollingRate,
+  });
+
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<{ raw: string; redacted: string; path: string } | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [health, setHealth] = useState<{ instructions: string | null; status: "healthy" | "degraded" | "down" | "unknown"; latencyMs: number; toolCount: number | null; tools: string[] | null; toolDetails?: ToolInfo[] | null; error: string | null } | null>(null);
-  const [healthLoading, setHealthLoading] = useState(false);
   const [activeTool, setActiveTool] = useState<ToolInfo | null>(null);
   const [toolArgs, setToolArgs] = useState<Record<string, string>>({});
   const [toolExecuting, setToolExecuting] = useState(false);
-  const [toolResult, setToolResult] = useState<{ content: Array<{ type: string; text?: string; [key: string]: unknown }>; isError?: boolean } | null>(null);
+  const [toolResult, setToolResult] = useState<{
+    content: Array<{ type: string; text?: string; [key: string]: unknown }>;
+    isError?: boolean;
+  } | null>(null);
   const [toolSearch, setToolSearch] = useState("");
-  const [showDiagnostics, setShowDiagnostics] = useState(false);
+
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
   const [diagnosticData, setDiagnosticData] = useState<{
     provider: string;
     cwd: string;
     probeId: string | null;
     probeLabel: string | null;
-    steps: Array<{ target: string; status: "found" | "missing" | "error" | "skipped"; details: string; contentPreview: string | null }>;
+    steps: Array<{
+      target: string;
+      status: "found" | "missing" | "error" | "skipped";
+      details: string;
+      contentPreview: string | null;
+    }>;
     discoveredServerCount: number;
     error: string | null;
   } | null>(null);
 
+  const copy = (value: string, label = "Value") =>
+    copyToClipboard(value, { toast, toastMessage: label });
+
+  const healthMap = useMemo(() => {
+    const map = new Map<string, HealthInfo>();
+    for (const r of healthQuery.data?.results ?? []) {
+      map.set(r.serverId, r as HealthInfo);
+      map.set(r.name, r as HealthInfo);
+    }
+    return map;
+  }, [healthQuery.data]);
+
+  const health = selected ? healthMap.get(selected) ?? null : null;
+  const healthLoading = healthQuery.isFetching && !health;
+
   const runDiagnostics = async () => {
-    setShowDiagnostics(true);
     setDiagnosticsLoading(true);
     try {
       const data = await callDiagnose({ agentId });
@@ -90,139 +176,37 @@ function McpModal({
     });
   }, [health?.tools, health?.toolDetails, toolSearch]);
 
-  const openDetail = useCallback(
-    async (id: string) => {
-      setSelected(id);
-      setToolSearch("");
-      setLoadingDetail(true);
-      try {
-        const d = await callRead({ agentId, serverId: id });
-        setDetail({ raw: d.raw, redacted: d.redacted, path: d.path });
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : String(e));
-        setSelected(null);
-      } finally {
-        setLoadingDetail(false);
-      }
-    },
-    [agentId, callRead, toast],
-  );
-
-  type HealthInfo = {
-    serverId: string;
-    name: string;
-    status: "healthy" | "degraded" | "down" | "unknown";
-    latencyMs: number;
-    toolCount: number | null;
-    tools: string[] | null;
-    toolDetails?: ToolInfo[] | null;
-    instructions: string | null;
-    error: string | null;
+  const resetExecutionState = () => {
+    setActiveTool(null);
+    setToolArgs({});
+    setToolResult(null);
   };
 
-  const [healthMap, setHealthMap] = useState<Map<string, HealthInfo>>(new Map());
-  const [healthMapLoading, setHealthMapLoading] = useState(false);
-
-  // Background health check across all discovered servers when modal is open or data refreshes
-  useEffect(() => {
-    if (!open || !query.data?.servers || query.data.servers.length === 0) return;
-    let active = true;
-    setHealthMapLoading(true);
-    callHealth({ agentId })
-      .then((res) => {
-        if (!active || !res?.results) return;
-        const map = new Map<string, HealthInfo>();
-        for (const r of res.results) {
-          map.set(r.serverId, r);
-          map.set(r.name, r);
-        }
-        setHealthMap(map);
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (active) setHealthMapLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [open, agentId, query.dataUpdatedAt, callHealth]);
-
-  // When opening detail view, immediately show cached health if available, or fetch
-  useEffect(() => {
-    if (!selected) {
-      setHealth(null);
-      return;
-    }
-    const cached = healthMap.get(selected);
-    if (cached) {
-      setHealth(cached);
-      setHealthLoading(false);
-      return;
-    }
-    setHealthLoading(true);
-    callHealth({ agentId, serverId: selected })
-      .then((r) => setHealth(r.results[0] ?? null))
-      .catch(() => setHealth(null))
-      .finally(() => setHealthLoading(false));
-  }, [selected, agentId, callHealth, healthMap]);
-
-  const getStatusColor = (status?: "healthy" | "degraded" | "down" | "unknown") => {
-    switch (status) {
-      case "healthy":
-        return theme.colors.statusSuccess;
-      case "degraded":
-        return theme.colors.statusWarning;
-      case "down":
-        return theme.colors.statusDanger;
-      default:
-        return theme.colors.foregroundMuted;
-    }
-  };
-
-  const getStatusDot = (status?: "healthy" | "degraded" | "down" | "unknown") => {
-    switch (status) {
-      case "healthy":
-        return "●";
-      case "degraded":
-        return "●";
-      case "down":
-        return "●";
-      default:
-        return "○";
-    }
-  };
-
-  const copy = async (value: string) => {
+  const openDetail = async (id: string) => {
+    resetExecutionState();
+    setSelected(id);
+    setToolSearch("");
+    setLoadingDetail(true);
     try {
-      // 1. Try modern navigator.clipboard
-      if (typeof navigator !== "undefined" && navigator?.clipboard?.writeText) {
-        await navigator.clipboard.writeText(value);
-        toast.show("Copied to clipboard");
-        return;
-      }
+      const d = await callRead({ agentId, serverId: id });
+      setDetail({ raw: d.raw, redacted: d.redacted, path: d.path });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+      setSelected(null);
+    } finally {
+      setLoadingDetail(false);
+    }
+  };
 
-      // 2. Try web document.execCommand fallback
-      if (typeof document !== "undefined" && document?.createElement) {
-        const textarea = document.createElement("textarea");
-        textarea.value = value;
-        textarea.style.position = "fixed";
-        textarea.style.opacity = "0";
-        document.body.appendChild(textarea);
-        textarea.focus();
-        textarea.select();
-        const success = document.execCommand("copy");
-        document.body.removeChild(textarea);
-        if (success) {
-          toast.show("Copied to clipboard");
-          return;
-        }
-      }
-    } catch {}
-
-    toast.show("Copy not available in this view");
+  const backToList = () => {
+    setSelected(null);
+    setDetail(null);
+    setToolSearch("");
+    resetExecutionState();
   };
 
   const openToolRunner = (toolName: string) => {
+    triggerHaptic("light");
     const details = health?.toolDetails?.find((d) => d.name === toolName);
     const toolObj: ToolInfo = details ?? { name: toolName };
     setActiveTool(toolObj);
@@ -243,7 +227,6 @@ function McpModal({
   const handleExecuteTool = async () => {
     if (!activeTool || !selected) return;
 
-    // Check required fields
     const required = activeTool.inputSchema?.required ?? [];
     const missing = required.filter((req) => !toolArgs[req]?.trim());
     if (missing.length > 0) {
@@ -251,7 +234,6 @@ function McpModal({
       return;
     }
 
-    // Convert args to proper types based on schema
     const parsedArgs: Record<string, unknown> = {};
     const props = activeTool.inputSchema?.properties ?? {};
     for (const [key, val] of Object.entries(toolArgs)) {
@@ -276,6 +258,7 @@ function McpModal({
 
     setToolExecuting(true);
     try {
+      triggerHaptic("medium");
       const res = await callToolRpc({
         agentId,
         serverId: selected,
@@ -284,11 +267,14 @@ function McpModal({
       });
       setToolResult(res);
       if (res.isError) {
-        toast.error(`Tool returned an error`);
+        triggerHaptic("error");
+        toast.error("Tool returned an error");
       } else {
-        toast.show(`Tool executed successfully`);
+        triggerHaptic("success");
+        toast.show("Tool executed successfully");
       }
     } catch (e) {
+      triggerHaptic("error");
       setToolResult({
         content: [{ type: "text", text: e instanceof Error ? e.message : String(e) }],
         isError: true,
@@ -299,619 +285,511 @@ function McpModal({
     }
   };
 
-  const lastCheck = query.dataUpdatedAt ? new Date(query.dataUpdatedAt).toLocaleTimeString() : null;
+  const statusVariant = (status?: string) =>
+    status === "healthy" ? "success" as const
+    : status === "degraded" ? "warning" as const
+    : status === "down" ? "danger" as const
+    : "neutral" as const;
 
-  return (
-    <Modal title={`MCP (${PLUGIN_VERSION})`} icon={<Icon name="Plug" />} open={open} onOpenChange={onOpenChange}>
-      <Modal.Content>
-        {showDiagnostics ? (
-          <View style={{ gap: 12, padding: 16 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-              <Pressable onPress={() => setShowDiagnostics(false)}>
-                <Text style={{ color: theme.colors.accent }}>← Back to list</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => void runDiagnostics()}
-                disabled={diagnosticsLoading}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 6,
-                  paddingHorizontal: 10,
-                  paddingVertical: 5,
-                  borderRadius: 8,
-                  borderWidth: 1,
-                  borderColor: theme.colors.foregroundMuted,
-                  opacity: diagnosticsLoading ? 0.6 : 1,
-                }}
-              >
-                <Icon name="Activity" size={12} color={theme.colors.foregroundMuted} />
-                <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>Re-run</Text>
-              </Pressable>
-            </View>
-            {diagnosticsLoading ? (
-              <View style={{ padding: 24, alignItems: "center", gap: 8 }}>
-                <ActivityIndicator color={theme.colors.accent} />
-                <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>Running host diagnostics…</Text>
-              </View>
-            ) : diagnosticData ? (
-              <View style={{ gap: 12 }}>
-                <View style={{ gap: 4, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: theme.colors.foregroundMuted + "18" }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                    <Text style={{ color: theme.colors.foreground, fontSize: 14, fontWeight: "600" }}>Probe Diagnostic Report ({PLUGIN_VERSION})</Text>
-                    <Pressable
-                      onPress={() => void copy(JSON.stringify(diagnosticData, null, 2))}
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 4,
-                        paddingHorizontal: 8,
-                        paddingVertical: 4,
-                        borderRadius: 6,
-                        backgroundColor: theme.colors.foregroundMuted + "14",
-                      }}
-                    >
-                      <Icon name="Copy" size={11} color={theme.colors.foregroundMuted} />
-                      <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>Copy JSON</Text>
-                    </Pressable>
-                  </View>
-                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>
-                    Provider: <Text style={{ color: theme.colors.foreground }}>{diagnosticData.provider}</Text>
-                    {diagnosticData.probeLabel ? ` (${diagnosticData.probeLabel})` : " (no matching probe in registry)"}
-                  </Text>
-                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontFamily: "monospace" }}>CWD: {diagnosticData.cwd}</Text>
-                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>
-                    Discovered Servers: <Text style={{ color: theme.colors.statusSuccess, fontWeight: "600" }}>{diagnosticData.discoveredServerCount}</Text>
-                  </Text>
-                  {diagnosticData.error ? (
-                    <Text style={{ color: theme.colors.statusDanger, fontSize: 12, marginTop: 4 }}>Probe Error: {diagnosticData.error}</Text>
-                  ) : null}
-                </View>
+  const lastCheck = healthQuery.dataUpdatedAt
+    ? new Date(healthQuery.dataUpdatedAt).toLocaleTimeString()
+    : null;
 
-                <View style={{ gap: 10 }}>
-                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, textTransform: "uppercase" }}>Checked Paths & Targets</Text>
-                  {diagnosticData.steps.map((step, idx) => (
-                    <View
-                      key={idx}
-                      style={{
-                        padding: 8,
-                        borderRadius: 6,
-                        backgroundColor:
-                          step.status === "found"
-                            ? theme.colors.statusSuccess + "14"
-                            : step.status === "error"
-                            ? theme.colors.statusDanger + "14"
-                            : theme.colors.foregroundMuted + "08",
-                      }}
-                    >
-                      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-                        <Text style={{ color: theme.colors.foreground, fontSize: 12, fontWeight: "500", flex: 1 }} numberOfLines={1}>
-                          {step.target}
-                        </Text>
-                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                          <Pressable
-                            onPress={() => void copy(step.contentPreview ?? step.target)}
-                            style={{ padding: 2 }}
-                          >
-                            <Icon name="Copy" size={11} color={theme.colors.foregroundMuted} />
-                          </Pressable>
-                          <Text
-                            style={{
-                              fontSize: 10,
-                              fontWeight: "600",
-                              textTransform: "uppercase",
-                              color:
-                                step.status === "found"
-                                ? theme.colors.statusSuccess
-                                : step.status === "error"
-                                ? theme.colors.statusDanger
-                                : theme.colors.foregroundMuted,
-                            }}
-                          >
-                            {step.status}
-                          </Text>
-                        </View>
-                      </View>
-                      <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, marginTop: 2 }}>{step.details}</Text>
-                      {step.contentPreview ? (
-                        <Text
-                          selectable
-                          style={{
-                            color: theme.colors.foregroundMuted,
-                            fontSize: 10,
-                            fontFamily: "monospace",
-                            marginTop: 4,
-                            backgroundColor: theme.colors.foregroundMuted + "10",
-                            padding: 6,
-                            borderRadius: 4,
-                          }}
-                          numberOfLines={6}
-                        >
-                          {step.contentPreview}
-                        </Text>
-                      ) : null}
-                    </View>
-                  ))}
-                </View>
-              </View>
-            ) : null}
-          </View>
-        ) : selected ? (
-          <View style={{ gap: 12, padding: 16 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-              <Pressable onPress={() => { setSelected(null); setDetail(null); setToolSearch(""); }}>
-                <Text style={{ color: theme.colors.accent }}>← Back to list</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  const debugPayload = {
-                    platform: Platform.OS,
-                    selected,
-                    server: servers.find((s) => s.id === selected),
-                    health,
-                    healthLoading,
-                    detailPath: detail?.path,
-                    hasHealthMapEntry: Boolean(healthMap.get(selected)),
-                    rawHealthMapEntry: healthMap.get(selected),
-                  };
-                  void copy(JSON.stringify(debugPayload, null, 2));
-                }}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 4,
-                  paddingHorizontal: 8,
-                  paddingVertical: 4,
-                  borderRadius: 6,
-                  backgroundColor: theme.colors.foregroundMuted + "14",
-                }}
-              >
-                <Icon name="Copy" size={11} color={theme.colors.foregroundMuted} />
-                <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>Copy Debug</Text>
-              </Pressable>
-            </View>
-            {activeTool ? (
-              <View style={{ gap: 12 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                  <Pressable onPress={() => { setActiveTool(null); setToolResult(null); }}>
-                    <Text style={{ color: theme.colors.accent }}>← Back to server</Text>
-                  </Pressable>
-                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>
-                    {servers.find((s) => s.id === selected)?.name ?? selected}
-                  </Text>
-                </View>
-
-                <View style={{ padding: 12, borderRadius: 8, backgroundColor: theme.colors.foregroundMuted + "0a", borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", gap: 6 }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                    <Icon name="Play" size={14} color={theme.colors.accent} />
-                    <Text style={{ color: theme.colors.foreground, fontSize: 14, fontWeight: "700" }}>{activeTool.name}</Text>
-                  </View>
-                  {activeTool.description ? (
-                    <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, lineHeight: 16 }}>
-                      {activeTool.description}
-                    </Text>
-                  ) : null}
-                </View>
-
-                {/* Parameters Form */}
-                <View style={{ gap: 10 }}>
-                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontWeight: "700", textTransform: "uppercase" }}>
-                    Parameters {activeTool.inputSchema?.properties ? `(${Object.keys(activeTool.inputSchema.properties).length})` : "(0)"}
-                  </Text>
-
-                  {activeTool.inputSchema?.properties && Object.keys(activeTool.inputSchema.properties).length > 0 ? (
-                    Object.entries(activeTool.inputSchema.properties).map(([paramName, prop]) => {
-                      const isRequired = (activeTool.inputSchema?.required ?? []).includes(paramName);
-                      return (
-                        <View key={paramName} style={{ gap: 4 }}>
-                          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                            <Text style={{ color: theme.colors.foreground, fontSize: 12, fontWeight: "600" }}>
-                              {paramName}
-                            </Text>
-                            {isRequired ? (
-                              <Text style={{ color: theme.colors.statusDanger, fontSize: 10, fontWeight: "700" }}>*REQUIRED</Text>
-                            ) : (
-                              <Text style={{ color: theme.colors.foregroundMuted, fontSize: 10 }}>optional</Text>
-                            )}
-                            {prop.type ? (
-                              <Text style={{ color: theme.colors.foregroundMuted, fontSize: 10, fontFamily: "monospace" }}>
-                                ({Array.isArray(prop.type) ? prop.type.join(" | ") : prop.type})
-                              </Text>
-                            ) : null}
-                          </View>
-                          {prop.description ? (
-                            <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>{prop.description}</Text>
-                          ) : null}
-                          <TextInput
-                            value={toolArgs[paramName] ?? ""}
-                            onChangeText={(text) => setToolArgs((prev) => ({ ...prev, [paramName]: text }))}
-                            placeholder={prop.default !== undefined ? String(prop.default) : isRequired ? "Required value..." : "Optional value..."}
-                            placeholderTextColor={theme.colors.foregroundMuted + "80"}
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                            multiline={
-                              prop.type === "object" ||
-                              prop.type === "array" ||
-                              (Array.isArray(prop.type) && (prop.type.includes("object") || prop.type.includes("array")))
-                            }
-                            style={{
-                              color: theme.colors.foreground,
-                              borderWidth: 1,
-                              borderColor: isRequired && !(toolArgs[paramName]?.trim())
-                                ? theme.colors.statusDanger + "60"
-                                : theme.colors.foregroundMuted + "40",
-                              borderRadius: 6,
-                              paddingHorizontal: 10,
-                              paddingVertical: 6,
-                              fontSize: 12,
-                              backgroundColor: theme.colors.foregroundMuted + "06",
-                            }}
-                          />
-                        </View>
-                      );
-                    })
-                  ) : (
-                    <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, fontStyle: "italic" }}>
-                      This tool takes no parameters.
-                    </Text>
-                  )}
-
-                  <Pressable
-                    onPress={() => void handleExecuteTool()}
-                    disabled={toolExecuting}
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 8,
-                      paddingVertical: 10,
-                      borderRadius: 8,
-                      backgroundColor: theme.colors.accent,
-                      marginTop: 6,
-                      opacity: toolExecuting ? 0.6 : 1,
-                    }}
-                  >
-                    {toolExecuting ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <Icon name="Play" size={14} color="#fff" />
-                    )}
-                    <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13 }}>
-                      {toolExecuting ? "Executing tool…" : "Execute Tool"}
-                    </Text>
-                  </Pressable>
-                </View>
-
-                {/* Execution Result */}
-                {toolResult ? (
-                  <View style={{ marginTop: 8, gap: 6, padding: 12, borderRadius: 8, backgroundColor: toolResult.isError ? theme.colors.statusDanger + "12" : theme.colors.foregroundMuted + "0a", borderWidth: 1, borderColor: toolResult.isError ? theme.colors.statusDanger + "40" : theme.colors.foregroundMuted + "20" }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                      <Text style={{ color: toolResult.isError ? theme.colors.statusDanger : theme.colors.statusSuccess, fontSize: 12, fontWeight: "700" }}>
-                        {toolResult.isError ? "✕ Execution Failed" : "✓ Result"}
-                      </Text>
-                      <Pressable
-                        onPress={() => {
-                          const text = toolResult.content.map((c) => c.text ?? JSON.stringify(c)).join("\n\n");
-                          void copy(text);
-                        }}
-                        style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: theme.colors.foregroundMuted + "14" }}
-                      >
-                        <Icon name="Copy" size={10} color={theme.colors.foregroundMuted} />
-                        <Text style={{ color: theme.colors.foregroundMuted, fontSize: 10 }}>Copy</Text>
-                      </Pressable>
-                    </View>
-                    {toolResult.content.map((c, idx) => (
-                      <Text key={idx} selectable style={{ color: theme.colors.foreground, fontSize: 11, fontFamily: "monospace", lineHeight: 16 }}>
-                        {c.text ?? JSON.stringify(c, null, 2)}
-                      </Text>
-                    ))}
-                  </View>
-                ) : null}
-              </View>
-            ) : loadingDetail ? (
-              <ActivityIndicator color={theme.colors.foregroundMuted} />
-            ) : detail ? (
-              <View style={{ gap: 12 }}>
-                <Text style={{ color: theme.colors.foreground, fontSize: 16, fontWeight: "600" }}>{servers.find((s) => s.id === selected)?.name ?? selected}</Text>
-                <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, marginTop: -6 }}>{detail.path}</Text>
-                <Pressable onPress={() => void copy(detail.path)}>
-                  <Text style={{ color: theme.colors.accent, fontSize: 12 }}>Copy path</Text>
-                </Pressable>
-                {healthLoading ? (
-                  <View style={{ marginTop: 8, flexDirection: "row", alignItems: "center", gap: 8 }}>
-                    <ActivityIndicator size="small" color={theme.colors.foregroundMuted} />
-                    <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>Checking health…</Text>
-                  </View>
-                ) : health ? (
-                  <View style={{ marginTop: 8, gap: 10, padding: 12, backgroundColor: theme.colors.foregroundMuted + "10", borderRadius: 8 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                      <Text style={{ color: getStatusColor(health.status), fontSize: 13 }}>{getStatusDot(health.status)}</Text>
-                      <Text style={{ color: theme.colors.foreground, fontSize: 13, fontWeight: "700" }}>
-                        {health.latencyMs}ms · {health.toolCount ?? "?"} tools
-                      </Text>
-                      {health.error ? <Text style={{ color: theme.colors.statusDanger, fontSize: 11 }}>{health.error.slice(0, 120)}</Text> : null}
-                    </View>
-                    {health.instructions ? (
-                      <View style={{ borderWidth: 1, borderColor: theme.colors.foregroundMuted + "20", borderRadius: 6, padding: 10, backgroundColor: theme.colors.foregroundMuted + "08" }}>
-                        <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontWeight: "700", textTransform: "uppercase", marginBottom: 6 }}>Instructions</Text>
-                        <Text selectable style={{ color: theme.colors.foreground, fontSize: 12, lineHeight: 18 }}>{health.instructions}</Text>
-                      </View>
-                    ) : null}
-                    {health.tools && health.tools.length > 0 ? (
-                      <View style={{ borderWidth: 1, borderColor: theme.colors.foregroundMuted + "20", borderRadius: 6, padding: 10, backgroundColor: theme.colors.foregroundMuted + "08", gap: 8 }}>
-                        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                          <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontWeight: "700", textTransform: "uppercase" }}>
-                            Available Tools ({filteredTools.length}{filteredTools.length !== health.tools.length ? ` of ${health.tools.length}` : ""}) — tap to run
-                          </Text>
-                        </View>
-                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: theme.colors.foregroundMuted + "10", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18" }}>
-                          <Icon name="Search" size={12} color={theme.colors.foregroundMuted} />
-                          <TextInput
-                            value={toolSearch}
-                            onChangeText={setToolSearch}
-                            placeholder="Filter tools by name or description..."
-                            placeholderTextColor={theme.colors.foregroundMuted + "80"}
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                            style={{ flex: 1, color: theme.colors.foreground, fontSize: 12, padding: 0 }}
-                          />
-                          {toolSearch ? (
-                            <Pressable onPress={() => setToolSearch("")} hitSlop={6}>
-                              <Icon name="X" size={12} color={theme.colors.foregroundMuted} />
-                            </Pressable>
-                          ) : null}
-                        </View>
-                        {filteredTools.length === 0 ? (
-                          <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, fontStyle: "italic", paddingVertical: 4 }}>
-                            No tools match &quot;{toolSearch}&quot;
-                          </Text>
-                        ) : (
-                          <View style={{ gap: 6 }}>
-                            {filteredTools.map((toolName) => {
-                              const details = health?.toolDetails?.find((d) => d.name === toolName);
-                              return (
-                              <Pressable
-                                key={toolName}
-                                onPress={() => openToolRunner(toolName)}
-                                style={{
-                                  flexDirection: "row",
-                                  alignItems: "center",
-                                  justifyContent: "space-between",
-                                  padding: 8,
-                                  borderRadius: 6,
-                                  backgroundColor: theme.colors.foregroundMuted + "10",
-                                  borderWidth: 1,
-                                  borderColor: theme.colors.foregroundMuted + "18",
-                                }}
-                              >
-                                <View style={{ flex: 1, gap: 2 }}>
-                                  <Text style={{ color: theme.colors.foreground, fontSize: 12, fontWeight: "600", fontFamily: "monospace" }}>
-                                    {toolName}
-                                  </Text>
-                                  {details?.description ? (
-                                    <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }} numberOfLines={1}>
-                                      {details.description}
-                                    </Text>
-                                  ) : null}
-                                </View>
-                                <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 4, backgroundColor: theme.colors.accent + "20" }}>
-                                  <Icon name="Play" size={10} color={theme.colors.accent} />
-                                  <Text style={{ color: theme.colors.accent, fontSize: 11, fontWeight: "600" }}>Run</Text>
-                                </View>
-                              </Pressable>
-                            );
-                          })}
-                        </View>
-                        )}
-                      </View>
-                    ) : null}
-                  </View>
-                ) : null}
-              </View>
-            ) : (
-              <Text style={{ color: theme.colors.foregroundMuted }}>No detail</Text>
-            )}
-          </View>
-        ) : (
-          <View style={{ gap: 12, padding: 16 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, flex: 1 }} numberOfLines={1}>
-                {lastCheck ? `Last check ${lastCheck}` : "Never checked"}
-                {query.data?.provider ? ` · ${query.data.provider}` : ""}
-                {` · ${PLUGIN_VERSION}`}
-                {query.isFetching ? " • checking…" : ""}
-              </Text>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                <Pressable
-                  onPress={() => void runDiagnostics()}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 4,
-                    paddingHorizontal: 8,
-                    paddingVertical: 6,
-                    borderRadius: 8,
-                    borderWidth: 1,
-                    borderColor: theme.colors.foregroundMuted,
-                  }}
-                >
-                  <Icon name="Activity" size={12} color={theme.colors.foregroundMuted} />
-                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>Diagnose</Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => void query.refetch()}
-                  disabled={query.isFetching}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 6,
-                    paddingHorizontal: 10,
-                    paddingVertical: 6,
-                    borderRadius: 8,
-                    borderWidth: 1,
-                    borderColor: theme.colors.foregroundMuted,
-                    opacity: query.isFetching ? 0.6 : 1,
-                  }}
-                >
-                  <Icon name="RefreshCw" size={12} color={theme.colors.foregroundMuted} />
-                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>Refresh</Text>
-                </Pressable>
-              </View>
-            </View>
-            <TextInput
-              value={search}
-              onChangeText={setSearch}
-              placeholder="Search servers & tools"
-              placeholderTextColor={theme.colors.foregroundMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={{
-                color: theme.colors.foreground,
-                borderWidth: 1,
-                borderColor: theme.colors.foregroundMuted,
-                borderRadius: 8,
-                paddingHorizontal: 12,
-                paddingVertical: 8,
+  const renderServers = () => {
+    if (selected) {
+      const server = servers.find((s) => s.id === selected);
+      if (activeTool) {
+        return (
+          <View key={`runner:${selected}:${activeTool.name}`} style={{ gap: 12 }}>
+            <Button
+              label="← Back to server"
+              variant="ghost"
+              size="sm"
+              onPress={() => {
+                resetExecutionState();
               }}
             />
-            {query.isPending ? (
-              <ActivityIndicator color={theme.colors.foregroundMuted} />
-            ) : query.isError ? (
-              <Text style={{ color: theme.colors.statusDanger }}>{(query.error as Error).message}</Text>
-            ) : (
-              <View>
-                {servers.length === 0 ? (
-                  <Text style={{ color: theme.colors.foregroundMuted }}>{term ? "No matches." : "No MCP servers found."}</Text>
-                ) : null}
-                {groupedServers.map(([label, items]) => (
-                  <View key={label} style={{ marginTop: 12 }}>
-                    <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, textTransform: "uppercase", marginBottom: 6 }}>{label}</Text>
-                    {items.map((s) => {
-                      const h = healthMap.get(s.id) ?? healthMap.get(s.name);
-                      const statusColor = getStatusColor(h?.status);
-                      const statusDot = getStatusDot(h?.status);
+            <Card>
+              <Card.Header title={activeTool.name} icon="Play" />
+              {activeTool.description ? (
+                <Text style={{ color: colors.foregroundMuted, fontSize: 12, lineHeight: 16 }}>
+                  {activeTool.description}
+                </Text>
+              ) : null}
+            </Card>
 
-                      return (
-                        <Pressable
-                          key={s.id}
-                          onPress={() => void openDetail(s.id)}
-                          style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: theme.colors.foregroundMuted + "18" }}
-                        >
-                          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1 }}>
-                              <Text style={{ color: statusColor, fontSize: 13, lineHeight: 14 }}>{statusDot}</Text>
-                              <Text style={{ color: theme.colors.foreground, fontWeight: "600" }}>{s.name}</Text>
-                              <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, backgroundColor: theme.colors.foregroundMuted + "18", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
-                                {s.transport}
-                              </Text>
-                              {s.hasSecrets ? <Icon name="KeyRound" size={12} color={theme.colors.foregroundMuted} /> : null}
-                            </View>
+            <Card>
+              <Card.Header
+                title={`Parameters (${activeTool.inputSchema?.properties ? Object.keys(activeTool.inputSchema.properties).length : 0})`}
+              />
+              {activeTool.inputSchema?.properties && Object.keys(activeTool.inputSchema.properties).length > 0 ? (
+                <View style={{ gap: 10 }}>
+                  {Object.entries(activeTool.inputSchema.properties).map(([paramName, prop]) => {
+                    const isRequired = (activeTool.inputSchema?.required ?? []).includes(paramName);
+                    const typeRaw = prop.type;
+                    const typeLabel = Array.isArray(typeRaw) ? typeRaw.join(" | ") : typeRaw;
+                    const isStructured =
+                      typeRaw === "object" || typeRaw === "array" ||
+                      (Array.isArray(typeRaw) && (typeRaw.includes("object") || typeRaw.includes("array")));
+                    return (
+                      <TextInput
+                        key={paramName}
+                        label={`${paramName}${isRequired ? " *" : ""}${typeLabel ? ` (${typeLabel})` : ""}`}
+                        helperText={prop.description}
+                        errorText={isRequired && !(toolArgs[paramName]?.trim()) ? "Required" : undefined}
+                        value={toolArgs[paramName] ?? ""}
+                        onChangeText={(text) => setToolArgs((prev) => ({ ...prev, [paramName]: text }))}
+                        placeholder={prop.default !== undefined ? String(prop.default) : isRequired ? "Required value..." : "Optional value..."}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        multiline={isStructured}
+                        mono={isStructured}
+                      />
+                    );
+                  })}
+                </View>
+              ) : (
+                <Text style={{ color: colors.foregroundMuted, fontSize: 12, fontStyle: "italic" }}>
+                  This tool takes no parameters.
+                </Text>
+              )}
+              <Button
+                label={toolExecuting ? "Executing tool…" : "Execute Tool"}
+                variant="primary"
+                icon="Play"
+                loading={toolExecuting}
+                disabled={toolExecuting}
+                onPress={() => void handleExecuteTool()}
+              />
+            </Card>
 
-                            {h ? (
-                              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                                <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>
-                                  {h.latencyMs}ms{h.toolCount !== null ? ` · ${h.toolCount} tools` : ""}
-                                </Text>
-                              </View>
-                            ) : healthMapLoading ? (
-                              <ActivityIndicator size="small" color={theme.colors.foregroundMuted} />
-                            ) : null}
-                          </View>
-                          <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, marginTop: 2 }} numberOfLines={2}>
-                            {s.description || s.command || s.url || "—"}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                ))}
-                {query.data?.cwd ? (
-                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 10, marginTop: 12, fontFamily: "monospace" }}>{query.data.cwd}</Text>
-                ) : null}
-                {query.data?.error ? <Text style={{ color: theme.colors.statusDanger, fontSize: 11, marginTop: 6 }}>{query.data.error}</Text> : null}
+            {toolResult ? (
+              <Card>
+                <Card.Header
+                  title={toolResult.isError ? "✕ Execution Failed" : "✓ Result"}
+                  value={
+                    <Badge
+                      label={toolResult.isError ? "error" : "ok"}
+                      variant={toolResult.isError ? "danger" : "success"}
+                    />
+                  }
+                />
+                <CodeBlock
+                  language="json"
+                  code={toolResult.content.map((c) => c.text ?? JSON.stringify(c, null, 2)).join("\n\n")}
+                  copyable
+                />
+              </Card>
+            ) : null}
+          </View>
+        );
+      }
+      if (loadingDetail) {
+        return (
+          <View style={{ padding: 24, alignItems: "center" }}>
+            <ActivityIndicator color={colors.foregroundMuted} />
+          </View>
+        );
+      }
+      if (!detail) {
+        return <EmptyState icon="Plug" title="No detail" description="Could not load server detail." />;
+      }
+      return (
+        <View style={{ gap: 12 }}>
+          <Button label="← Back to list" variant="ghost" size="sm" onPress={backToList} />
+          <Card>
+            <Card.Header
+              title={server?.name ?? selected}
+              value={server ? <Badge label={server.transport} variant="neutral" /> : undefined}
+            />
+            <Text style={{ color: colors.foregroundMuted, fontSize: 11, fontFamily: "monospace" }}>
+              {detail.path}
+            </Text>
+            {healthLoading ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <ActivityIndicator size="small" color={colors.foregroundMuted} />
+                <Text style={{ color: colors.foregroundMuted, fontSize: 11 }}>Checking health…</Text>
               </View>
-            )}
+            ) : health ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <StatusDot variant={statusVariant(health.status)} />
+                <Text style={{ color: colors.foreground, fontSize: 13, fontWeight: "700" }}>
+                  {health.latencyMs}ms · {health.toolCount ?? "?"} tools
+                </Text>
+                {health.error ? (
+                  <Text style={{ color: colors.statusDanger, fontSize: 11 }}>{health.error.slice(0, 120)}</Text>
+                ) : null}
+              </View>
+            ) : null}
+          </Card>
+
+          {health?.instructions ? (
+            <Card>
+              <Card.Header title="Instructions" />
+              <Text selectable style={{ color: colors.foreground, fontSize: 12, lineHeight: 18 }}>
+                {health.instructions}
+              </Text>
+            </Card>
+          ) : null}
+
+          {health?.tools && health.tools.length > 0 ? (
+            <Card>
+              <Card.Header
+                title={`Available Tools (${filteredTools.length}${filteredTools.length !== health.tools.length ? ` of ${health.tools.length}` : ""}) — tap to run`}
+              />
+              <SearchInput
+                value={toolSearch}
+                onChangeText={setToolSearch}
+                placeholder="Filter tools by name or description..."
+              />
+              {filteredTools.length === 0 ? (
+                <EmptyState
+                  icon="Search"
+                  title="No tools match"
+                  description={`Nothing matches "${toolSearch}"`}
+                />
+              ) : (
+                <View style={{ gap: 6 }}>
+                  {filteredTools.map((toolName) => {
+                    const details = health?.toolDetails?.find((d) => d.name === toolName);
+                    return (
+                      <Button
+                        key={toolName}
+                        label={details?.description ? `${toolName} — ${details.description}` : toolName}
+                        variant="ghost"
+                        size="sm"
+                        icon="Play"
+                        onPress={() => openToolRunner(toolName)}
+                      />
+                    );
+                  })}
+                </View>
+              )}
+            </Card>
+          ) : null}
+
+          <Card>
+            <Card.Header title="Raw Config (redacted)" />
+            <CodeBlock language="json" code={detail.redacted} maxHeight={240} copyable />
+          </Card>
+        </View>
+      );
+    }
+
+    return (
+      <View style={{ gap: 12 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+          <Text style={{ color: colors.foregroundMuted, fontSize: 11, flex: 1 }} numberOfLines={1}>
+            {lastCheck ? `Last check ${lastCheck}` : "Never checked"}
+            {query.data?.provider ? ` · ${query.data.provider}` : ""}
+            {` · ${PLUGIN_VERSION}`}
+            {query.isFetching ? " • checking…" : ""}
+          </Text>
+          <ActionBar align="flex-end">
+            <Button
+              label="Diagnose"
+              variant="ghost"
+              size="sm"
+              icon="Activity"
+              onPress={() => {
+                triggerHaptic("light");
+                setActiveTab("diagnostics");
+                void runDiagnostics();
+              }}
+            />
+            <Button
+              label="Refresh"
+              variant="ghost"
+              size="sm"
+              icon="RefreshCw"
+              loading={query.isFetching}
+              disabled={query.isFetching}
+              onPress={() => void query.refetch()}
+            />
+          </ActionBar>
+        </View>
+        <SearchInput
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Search servers & tools"
+        />
+        {query.isPending ? (
+          <ActivityIndicator color={colors.foregroundMuted} />
+        ) : query.isError ? (
+          <Text style={{ color: colors.statusDanger }}>{(query.error as Error).message}</Text>
+        ) : servers.length === 0 ? (
+          <EmptyState
+            icon="Plug"
+            title={term ? "No matches" : "No MCP servers found"}
+            description={term ? `Nothing matches "${term}"` : "No MCP servers discovered for this agent session."}
+          />
+        ) : (
+          <View>
+            {groupedServers.map(([label, items]) => (
+              <View key={label} style={{ marginTop: 12 }}>
+                <Text style={{ color: colors.foregroundMuted, fontSize: 11, textTransform: "uppercase", marginBottom: 6 }}>
+                  {label}
+                </Text>
+                {items.map((s) => {
+                  const h = healthMap.get(s.id) ?? healthMap.get(s.name);
+                  return (
+                    <Button
+                      key={s.id}
+                      label={`${s.name} · ${s.transport}${h && h.toolCount !== null ? ` · ${h.toolCount} tools` : ""}${h ? ` · ${h.latencyMs}ms` : ""}`}
+                      variant="ghost"
+                      size="sm"
+                      icon="Plug"
+                      onPress={() => void openDetail(s.id)}
+                    />
+                  );
+                })}
+              </View>
+            ))}
+            {query.data?.cwd ? (
+              <Text style={{ color: colors.foregroundMuted, fontSize: 10, marginTop: 12, fontFamily: "monospace" }}>
+                {query.data.cwd}
+              </Text>
+            ) : null}
+            {query.data?.error ? (
+              <Text style={{ color: colors.statusDanger, fontSize: 11, marginTop: 6 }}>{query.data.error}</Text>
+            ) : null}
           </View>
         )}
-      </Modal.Content>
-    </Modal>
+      </View>
+    );
+  };
+
+  const renderDiagnostics = () => (
+    <View style={{ gap: 12 }}>
+      <ActionBar align="flex-end">
+        <Button
+          label="Re-run"
+          variant="ghost"
+          size="sm"
+          icon="Activity"
+          loading={diagnosticsLoading}
+          disabled={diagnosticsLoading}
+          onPress={() => void runDiagnostics()}
+        />
+      </ActionBar>
+      {diagnosticsLoading ? (
+        <View style={{ padding: 24, alignItems: "center", gap: 8 }}>
+          <ActivityIndicator color={colors.accent} />
+          <Text style={{ color: colors.foregroundMuted, fontSize: 12 }}>Running host diagnostics…</Text>
+        </View>
+      ) : diagnosticData ? (
+        <View style={{ gap: 12 }}>
+          <Card>
+            <Card.Header
+              title={`Probe Diagnostic Report (${PLUGIN_VERSION})`}
+              value={<Badge label={`${diagnosticData.discoveredServerCount} servers`} variant="success" />}
+            />
+            <Text style={{ color: colors.foregroundMuted, fontSize: 12 }}>
+              Provider: {diagnosticData.provider}
+              {diagnosticData.probeLabel ? ` (${diagnosticData.probeLabel})` : " (no matching probe in registry)"}
+            </Text>
+            <Text style={{ color: colors.foregroundMuted, fontSize: 11, fontFamily: "monospace" }}>
+              CWD: {diagnosticData.cwd}
+            </Text>
+            {diagnosticData.error ? (
+              <Text style={{ color: colors.statusDanger, fontSize: 12, marginTop: 4 }}>
+                Probe Error: {diagnosticData.error}
+              </Text>
+            ) : null}
+            <CodeBlock language="json" code={JSON.stringify(diagnosticData, null, 2)} maxHeight={200} copyable />
+          </Card>
+
+          {diagnosticData.steps.map((step, idx) => (
+            <Card key={idx}>
+              <Card.Header
+                title={step.target}
+                value={<Badge label={step.status} variant={statusVariant(step.status === "found" ? "healthy" : step.status === "error" ? "down" : "unknown")} />}
+              />
+              <Text style={{ color: colors.foregroundMuted, fontSize: 11, marginTop: 2 }}>{step.details}</Text>
+              {step.contentPreview ? (
+                <CodeBlock language="json" code={step.contentPreview} maxHeight={160} copyable />
+              ) : null}
+            </Card>
+          ))}
+        </View>
+      ) : (
+        <EmptyState
+          icon="Activity"
+          title="No diagnostics yet"
+          description="Run host diagnostics to inspect provider MCP probes."
+          action={{ label: "Run Diagnostics", onPress: () => void runDiagnostics() }}
+        />
+      )}
+    </View>
   );
-}
 
-function McpPill({ theme, agentId }: PluginComposerPillProps) {
-  const query = useMcpQuery(agentId);
-  const [open, setOpen] = useState(false);
+  const renderSettings = () => (
+    <View style={{ gap: 12 }}>
+      <Card>
+        <Card.Header title="Health Polling" subtitle="Background refresh rate for server health" />
+        <FormRow label="Polling rate" description="Paused disables background health polling">
+          <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
+            {(["1s", "2s", "5s", "10s", "paused"] as const).map((r) => (
+              <Button
+                key={r}
+                label={r}
+                size="sm"
+                variant={settings.healthPollingRate === r ? "primary" : "ghost"}
+                onPress={() => {
+                  triggerHaptic("light");
+                  updateSettings({ healthPollingRate: r });
+                }}
+              />
+            ))}
+          </View>
+        </FormRow>
+      </Card>
 
-  useEffect(() => {
-    openers.set(agentId, () => setOpen(true));
-    return () => { openers.delete(agentId); };
-  }, [agentId]);
+      <Card>
+        <Card.Header title="Visual Flair" subtitle="Corner radius, density, surface and accent" />
+        <FormRow label="Corner radius" description={`Active preset: "${settings.flairRadius}"`}>
+          <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
+            {(["sharp", "rounded", "pill"] as const).map((r) => (
+              <Button
+                key={r}
+                label={r.toUpperCase()}
+                size="sm"
+                variant={settings.flairRadius === r ? "primary" : "ghost"}
+                onPress={() => {
+                  triggerHaptic("light");
+                  updateSettings({ flairRadius: r });
+                }}
+              />
+            ))}
+          </View>
+        </FormRow>
+        <FormRow label="Layout density" description={`Active density: "${settings.flairDensity}"`}>
+          <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
+            {(["compact", "comfortable", "spacious"] as const).map((d) => (
+              <Button
+                key={d}
+                label={d.charAt(0).toUpperCase() + d.slice(1)}
+                size="sm"
+                variant={settings.flairDensity === d ? "primary" : "ghost"}
+                onPress={() => {
+                  triggerHaptic("light");
+                  updateSettings({ flairDensity: d });
+                }}
+              />
+            ))}
+          </View>
+        </FormRow>
+        <FormRow label="Surface treatment" description={`Active surface: "${settings.flairSurface}"`}>
+          <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
+            {(["flat", "tinted", "elevated"] as const).map((s) => (
+              <Button
+                key={s}
+                label={s.charAt(0).toUpperCase() + s.slice(1)}
+                size="sm"
+                variant={settings.flairSurface === s ? "primary" : "ghost"}
+                onPress={() => {
+                  triggerHaptic("light");
+                  updateSettings({ flairSurface: s });
+                }}
+              />
+            ))}
+          </View>
+        </FormRow>
+        <FormRow label="Brand accent color" description={`Current accent: ${settings.flairAccentColor}`}>
+          <TextInput
+            value={settings.flairAccentColor}
+            onChangeText={(text) => updateSettings({ flairAccentColor: text })}
+            placeholder="#6366f1"
+            mono
+          />
+        </FormRow>
+      </Card>
 
-  const label = useMemo(() => {
-    if (!query.data) return "MCP";
-    const n = query.data.servers.length;
-    return n > 0 ? `MCP ${n}` : "MCP";
-  }, [query.data]);
+      <ActionBar align="space-between">
+        <Text style={{ fontSize: 11, color: colors.foregroundMuted }}>
+          {isUpdating ? "Saving to disk..." : "Saved to settings.json atomically"}
+        </Text>
+        <Button
+          label="Reset Defaults"
+          variant="secondary"
+          size="sm"
+          onPress={() => {
+            triggerHaptic("warning");
+            void resetSettings();
+          }}
+        />
+      </ActionBar>
+    </View>
+  );
 
   return (
-    <>
-      <Icon name="Plug" size={14} color={theme.colors.foregroundMuted} />
-      <Text numberOfLines={1} style={{ color: theme.colors.foregroundMuted, flexShrink: 1 }}>
-        {label}
-      </Text>
-      <McpModal agentId={agentId} open={open} onOpenChange={setOpen} theme={theme} />
-    </>
+    <PluginThemeProvider
+      theme={{ ...theme, colors: { ...theme.colors, accent: settings.flairAccentColor } }}
+      layout={layout}
+      flair={{
+        radius: settings.flairRadius,
+        density: settings.flairDensity,
+        surfaceStyle: settings.flairSurface,
+        accentColor: settings.flairAccentColor,
+      }}
+    >
+    <ModalBody refreshing={query.isFetching} onRefresh={() => void query.refetch()}>
+      <Tabs
+        tabs={TABS}
+        activeTab={activeTab}
+        onTabChange={(tab) => {
+          triggerHaptic("light");
+          setActiveTab(tab);
+        }}
+        mode="auto"
+      />
+      {activeTab === "servers" ? renderServers() : null}
+      {activeTab === "diagnostics" ? renderDiagnostics() : null}
+      {activeTab === "settings" ? renderSettings() : null}
+      {activeTab === "about" ? (
+        <AboutSection
+          name="MCP Tools"
+          description="Live MCP server inspector, health probes, diagnostics and tool runner for Paseo agents."
+          version={PLUGIN_VERSION}
+          author="xpufx"
+          repository="https://github.com/xpufx/paseo-mcp-tools"
+          license="MIT"
+          logo="Plug"
+          extraItems={[
+            { label: "Servers", value: `${query.data?.servers.length ?? 0}`, copyable: false },
+            { label: "Provider", value: query.data?.provider ?? "unknown", copyable: true },
+            { label: "Health Polling", value: settings.healthPollingRate, copyable: false },
+          ]}
+        />
+      ) : null}
+      <ActionBar align="flex-end">
+        <Button
+          label="Close"
+          variant="ghost"
+          onPress={() => {
+            triggerHaptic("light");
+            close();
+          }}
+        />
+      </ActionBar>
+    </ModalBody>
+    </PluginThemeProvider>
   );
 }
 
 export function contributeClient(client: PluginClientContext) {
-  const pills = new Map<string, () => void>();
-
-  function addPill(agentId: string, workspaceId: string) {
-    if (pills.has(agentId)) return;
-    pills.set(
-      agentId,
-      client.addComposerPill({
-        id: "mcp-tools",
-        title: "MCP",
-        workspaceId,
-        agentId,
-        Component: McpPill,
-        onPress() {
-          const opener = openers.get(agentId);
-          if (opener) opener();
-        },
-      }),
-    );
-  }
-
-  function removePill(agentId: string) {
-    pills.get(agentId)?.();
-    pills.delete(agentId);
-    openers.delete(agentId);
-  }
-
-  const unsubscribe = client.paseo.agents.subscribe((update) => {
-    if (update.kind === "remove") {
-      removePill(update.agentId);
-      return;
-    }
-    const { id, workspaceId } = update.agent;
-    if (workspaceId) addPill(id, workspaceId);
+  return registerComposerPill(client, {
+    id: "mcp-tools",
+    title: "MCP",
+    compactTitle: "MCP",
+    modalTitle: "MCP Tools",
+    icon: "Plug",
+    flair: {
+      radius: "rounded",
+      density: "comfortable",
+      accentColor: "#6366f1",
+    },
+    renderPill: (props) => <McpPillBody {...props} />,
+    renderModal: (props) => <McpModalContent {...props} />,
   });
-
-  client.paseo.agents
-    .list()
-    .then((result) => {
-      result.entries.forEach(({ agent }) => {
-        if (agent.workspaceId) addPill(agent.id, agent.workspaceId);
-      });
-    })
-    .catch((e) => console.error("mcp-tools: seed pills failed", e));
-
-  return () => {
-    unsubscribe();
-    pills.forEach((remove) => remove());
-    pills.clear();
-  };
 }

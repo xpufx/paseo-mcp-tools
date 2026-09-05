@@ -7680,7 +7680,7 @@ var require_cross_spawn = __commonJS({
     var cp = __require("child_process");
     var parse3 = require_parse();
     var enoent = require_enoent();
-    function spawn2(command, args, options) {
+    function spawn3(command, args, options) {
       const parsed = parse3(command, args, options);
       const spawned = cp.spawn(parsed.command, parsed.args, parsed.options);
       enoent.hookChildProcess(spawned, parsed);
@@ -7692,8 +7692,8 @@ var require_cross_spawn = __commonJS({
       result.error = result.error || enoent.verifyENOENTSync(result.status, parsed);
       return result;
     }
-    module.exports = spawn2;
-    module.exports.spawn = spawn2;
+    module.exports = spawn3;
+    module.exports.spawn = spawn3;
     module.exports.sync = spawnSync;
     module.exports._parse = parse3;
     module.exports._enoent = enoent;
@@ -19718,6 +19718,327 @@ var StreamableHTTPClientTransport = class {
   }
 };
 
+// ../../../../code/paseo-plugin-helper/dist/mcp/index.js
+import { spawn as spawn2 } from "child_process";
+import readline from "readline";
+import crypto2 from "crypto";
+var StderrRingBuffer = class {
+  constructor(maxLines = 25) {
+    this.maxLines = maxLines;
+  }
+  maxLines;
+  lines = [];
+  push(chunk) {
+    const newLines = chunk.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+    this.lines.push(...newLines);
+    if (this.lines.length > this.maxLines) {
+      this.lines = this.lines.slice(-this.maxLines);
+    }
+  }
+  getRecentLines() {
+    return [...this.lines];
+  }
+  getRecentText() {
+    return this.lines.join("\n");
+  }
+  clear() {
+    this.lines = [];
+  }
+};
+function killProcessTree(child, timeoutMs = 1500) {
+  return new Promise((resolve) => {
+    if (!child || !child.pid || child.killed) {
+      resolve();
+      return;
+    }
+    const pid = child.pid;
+    if (process.platform === "win32") {
+      try {
+        const killer = spawn2("taskkill", ["/pid", String(pid), "/T", "/F"], {
+          stdio: "ignore",
+          windowsHide: true
+        });
+        killer.on("close", () => resolve());
+        killer.on("error", () => {
+          try {
+            child.kill("SIGKILL");
+          } catch {
+          }
+          resolve();
+        });
+      } catch {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+        }
+        resolve();
+      }
+      return;
+    }
+    try {
+      process.kill(-pid, "SIGTERM");
+    } catch {
+      try {
+        child.kill("SIGTERM");
+      } catch {
+      }
+    }
+    const timer = setTimeout(() => {
+      try {
+        process.kill(-pid, "SIGKILL");
+      } catch {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+        }
+      }
+      resolve();
+    }, timeoutMs);
+    child.on("close", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+var McpClient = class _McpClient {
+  constructor(command, args = [], env, options = {}) {
+    this.command = command;
+    this.args = args;
+    this.env = env;
+    this.options = options;
+  }
+  command;
+  args;
+  env;
+  options;
+  child = null;
+  stderrBuffer = new StderrRingBuffer(30);
+  pendingRequests = /* @__PURE__ */ new Map();
+  initialized = false;
+  serverInfo;
+  initPromise;
+  /**
+   * Creates an MCP client talking to a local process over stdio.
+   */
+  static forStdio(command, args = [], env, options) {
+    return new _McpClient(command, args, env, options);
+  }
+  startProcess() {
+    if (this.child && !this.child.killed) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      try {
+        this.child = spawn2(this.command, this.args, {
+          env: {
+            ...process.env,
+            ...this.env
+          },
+          shell: false,
+          detached: process.platform !== "win32"
+        });
+        this.child.on("error", (err) => {
+          const isNotFound = err.code === "ENOENT" || err.code === "EACCES";
+          const formattedErr = isNotFound ? new Error(`Executable "${this.command}" not found in PATH or cannot be executed (${err.code}).`) : err;
+          this.rejectAllPending(formattedErr);
+          reject(formattedErr);
+        });
+        this.child.stderr?.on("data", (chunk) => {
+          this.stderrBuffer.push(chunk.toString());
+        });
+        if (this.child.stdout) {
+          const rl = readline.createInterface({
+            input: this.child.stdout,
+            crlfDelay: Infinity
+          });
+          rl.on("line", (line) => {
+            const trimmed = line.trim();
+            if (!trimmed || !trimmed.startsWith("{")) {
+              return;
+            }
+            try {
+              const msg = JSON.parse(trimmed);
+              this.handleMessage(msg);
+            } catch {
+            }
+          });
+        }
+        this.child.on("close", (code, signal) => {
+          const stderr = this.stderrBuffer.getRecentText();
+          const reason = stderr ? `Process exited with code ${code ?? signal}:
+${stderr}` : `Process exited unexpectedly with code ${code ?? signal}.`;
+          this.rejectAllPending(new Error(reason));
+        });
+        resolve();
+      } catch (err) {
+        const isNotFound = err?.code === "ENOENT" || err?.code === "EACCES";
+        const formattedErr = isNotFound ? new Error(`Executable "${this.command}" not found in PATH or cannot be executed (${err?.code}).`) : err;
+        reject(formattedErr);
+      }
+    });
+  }
+  handleMessage(msg) {
+    if (!msg || typeof msg !== "object") return;
+    if (msg.id !== void 0 && msg.id !== null) {
+      const pending = this.pendingRequests.get(msg.id);
+      if (pending) {
+        clearTimeout(pending.timer);
+        this.pendingRequests.delete(msg.id);
+        if (msg.error) {
+          const err = new Error(msg.error.message || `JSON-RPC error ${msg.error.code}`);
+          err.code = msg.error.code;
+          err.data = msg.error.data;
+          pending.reject(err);
+        } else {
+          pending.resolve(msg.result);
+        }
+      }
+    }
+  }
+  rejectAllPending(err) {
+    for (const [id, pending] of this.pendingRequests.entries()) {
+      clearTimeout(pending.timer);
+      pending.reject(err);
+    }
+    this.pendingRequests.clear();
+  }
+  async sendRequest(method, params, timeoutMs) {
+    await this.startProcess();
+    if (!this.child || !this.child.stdin || this.child.killed) {
+      throw new Error(`Process "${this.command}" is not running.`);
+    }
+    const id = crypto2.randomUUID();
+    const timeout = timeoutMs ?? this.options.timeoutMs ?? 1e4;
+    const payload = JSON.stringify({
+      jsonrpc: "2.0",
+      id,
+      method,
+      ...params !== void 0 ? { params } : {}
+    });
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingRequests.delete(id);
+        const stderr = this.stderrBuffer.getRecentText();
+        const msg = stderr ? `Request "${method}" timed out after ${timeout}ms. Stderr output:
+${stderr}` : `Request "${method}" timed out after ${timeout}ms.`;
+        reject(new Error(msg));
+      }, timeout);
+      this.pendingRequests.set(id, { resolve, reject, timer });
+      this.child.stdin.write(payload + "\n", (err) => {
+        if (err) {
+          clearTimeout(timer);
+          this.pendingRequests.delete(id);
+          reject(err);
+        }
+      });
+    });
+  }
+  sendNotification(method, params) {
+    if (!this.child || !this.child.stdin || this.child.killed) return;
+    const payload = JSON.stringify({
+      jsonrpc: "2.0",
+      method,
+      ...params !== void 0 ? { params } : {}
+    });
+    this.child.stdin.write(payload + "\n");
+  }
+  /**
+   * Performs the MCP initialize handshake and sends the initialized notification.
+   */
+  async initialize() {
+    if (this.initialized) return;
+    if (this.initPromise) return this.initPromise;
+    this.initPromise = (async () => {
+      const result = await this.sendRequest("initialize", {
+        protocolVersion: "2024-11-05",
+        capabilities: {
+          tools: {}
+        },
+        clientInfo: this.options.clientInfo ?? {
+          name: "paseo-plugin",
+          version: "1.0.0"
+        }
+      });
+      this.serverInfo = result?.serverInfo;
+      this.sendNotification("notifications/initialized");
+      this.initialized = true;
+    })();
+    return this.initPromise;
+  }
+  /**
+   * Checks the health and responsiveness of the MCP server.
+   * If protocol ping fails with -32601 (Method not found), seamlessly falls back
+   * to handshake validation.
+   */
+  async ping(options = {}) {
+    const start = Date.now();
+    const timeout = options.timeoutMs ?? this.options.timeoutMs ?? 1e4;
+    try {
+      await this.initialize();
+      if (options.mode === "tools") {
+        await this.listTools();
+      } else {
+        try {
+          await this.sendRequest("ping", {}, timeout);
+        } catch (err) {
+          if (err.code !== -32601) {
+            throw err;
+          }
+        }
+      }
+      return {
+        healthy: true,
+        latencyMs: Date.now() - start,
+        serverInfo: this.serverInfo,
+        stderr: this.stderrBuffer.getRecentText()
+      };
+    } catch (err) {
+      return {
+        healthy: false,
+        latencyMs: Date.now() - start,
+        error: err.message,
+        stderr: this.stderrBuffer.getRecentText()
+      };
+    }
+  }
+  /**
+   * Enumerates available tools on the MCP server.
+   */
+  async listTools() {
+    await this.initialize();
+    const result = await this.sendRequest("tools/list", {});
+    return result?.tools ?? [];
+  }
+  /**
+   * Calls a tool by name with the given arguments.
+   */
+  async callTool(name, args = {}) {
+    await this.initialize();
+    const result = await this.sendRequest("tools/call", {
+      name,
+      arguments: args
+    });
+    return result;
+  }
+  /**
+   * Retrieves the recent stderr lines captured in the ring buffer.
+   */
+  getStderr() {
+    return this.stderrBuffer.getRecentText();
+  }
+  /**
+   * Cleanly closes the client, killing the child process and its process tree.
+   */
+  async close() {
+    this.rejectAllPending(new Error("Client was closed."));
+    if (this.child) {
+      const child = this.child;
+      this.child = null;
+      await killProcessTree(child);
+    }
+    this.initialized = false;
+    this.initPromise = void 0;
+  }
+};
+
 // health/health.server.ts
 function withTimeout(p, ms, label) {
   let t;
@@ -19727,6 +20048,108 @@ function withTimeout(p, ms, label) {
       t = setTimeout(() => reject(new Error(`${label} timeout after ${ms}ms`)), ms);
     })
   ]).finally(() => clearTimeout(t));
+}
+function splitCommand(command) {
+  const parts = command.trim().split(/\s+/);
+  return { command: parts[0], args: parts.slice(1) };
+}
+async function checkStdioWithHelper(server, opts) {
+  const timeoutMs = opts.timeoutMs ?? 7e3;
+  const started = Date.now();
+  const checkedAt = (/* @__PURE__ */ new Date()).toISOString();
+  if (!server.command) {
+    return {
+      serverId: server.id,
+      name: server.name,
+      status: "unknown",
+      latencyMs: 0,
+      toolCount: null,
+      tools: null,
+      instructions: null,
+      error: "No command to dial \u2014 unknown transport",
+      checkedAt
+    };
+  }
+  const { command, args } = splitCommand(server.command);
+  const helper = McpClient.forStdio(command, args, void 0, {
+    timeoutMs,
+    clientInfo: { name: "paseo-mcp-health", version: "1.0.0" }
+  });
+  try {
+    if (opts.includeTools !== false) {
+      const list = await helper.listTools();
+      const tools = list.map((t) => t.name);
+      const toolDetails = list.map((t) => ({
+        name: t.name,
+        description: t.description,
+        inputSchema: t.inputSchema
+      }));
+      const latencyMs2 = Date.now() - started;
+      return {
+        serverId: server.id,
+        name: server.name,
+        status: "healthy",
+        latencyMs: latencyMs2,
+        toolCount: tools.length,
+        tools,
+        toolDetails,
+        instructions: null,
+        error: null,
+        checkedAt
+      };
+    }
+    const ping = await helper.ping();
+    const latencyMs = Date.now() - started;
+    if (!ping.healthy) {
+      return {
+        serverId: server.id,
+        name: server.name,
+        status: "down",
+        latencyMs,
+        toolCount: null,
+        tools: null,
+        toolDetails: null,
+        instructions: null,
+        error: ping.error ?? "ping failed",
+        checkedAt
+      };
+    }
+    return {
+      serverId: server.id,
+      name: server.name,
+      status: "healthy",
+      latencyMs,
+      toolCount: null,
+      tools: null,
+      toolDetails: null,
+      instructions: null,
+      error: null,
+      checkedAt
+    };
+  } catch (e) {
+    const latencyMs = Date.now() - started;
+    const stderr = helper.getStderr();
+    const base = e instanceof Error ? e.message : String(e);
+    return {
+      serverId: server.id,
+      name: server.name,
+      status: "down",
+      latencyMs,
+      toolCount: null,
+      tools: null,
+      toolDetails: null,
+      instructions: null,
+      error: stderr ? `${base}
+Recent stderr:
+${stderr}` : base,
+      checkedAt
+    };
+  } finally {
+    try {
+      await helper.close();
+    } catch {
+    }
+  }
 }
 function transportFor(server) {
   if (server.url) {
@@ -19754,6 +20177,9 @@ function transportFor(server) {
   return null;
 }
 async function checkMcpServerHealth(server, opts = {}) {
+  if (server.command && !server.url) {
+    return checkStdioWithHelper(server, opts);
+  }
   const timeoutMs = opts.timeoutMs ?? 7e3;
   const started = Date.now();
   const checkedAt = (/* @__PURE__ */ new Date()).toISOString();
@@ -19839,6 +20265,22 @@ async function checkMcpServerHealth(server, opts = {}) {
   }
 }
 async function callMcpServerTool(server, toolName, args = {}, timeoutMs = 15e3) {
+  if (server.command && !server.url) {
+    const { command, args: argv } = splitCommand(server.command);
+    const helper = McpClient.forStdio(command, argv, void 0, {
+      timeoutMs,
+      clientInfo: { name: "paseo-mcp-runner", version: "1.0.0" }
+    });
+    try {
+      const result = await helper.callTool(toolName, args);
+      return result;
+    } finally {
+      try {
+        await helper.close();
+      } catch {
+      }
+    }
+  }
   const resolved = transportFor(server);
   if (!resolved) {
     throw new Error(`Cannot execute tool on ${server.name}: unknown transport`);

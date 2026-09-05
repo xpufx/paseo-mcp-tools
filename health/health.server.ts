@@ -2,6 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { McpClient } from "paseo-plugin-helper/mcp";
 import type { McpServer } from "../mcp.shared";
 
 // GTD: generic health check that works with *every* MCP.
@@ -60,9 +61,112 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 }
 
 // Resolve transport from McpServer's command/url.
-// For stdio we need env — but we redact in configPreview. For health we try
-// without extra env first; Paseo's server already has process.env.
-// If server has secrets, caller can pass resolved env via options later.
+// For stdio we use the helper McpClient (stderr ring buffer, non-JSON stdout
+// filtering, process-tree cleanup). HTTP/SSE stay on the MCP SDK.
+function splitCommand(command: string): { command: string; args: string[] } {
+  const parts = command.trim().split(/\s+/);
+  return { command: parts[0], args: parts.slice(1) };
+}
+
+async function checkStdioWithHelper(
+  server: McpServer,
+  opts: HealthCheckOptions,
+): Promise<HealthResult> {
+  const timeoutMs = opts.timeoutMs ?? 7000;
+  const started = Date.now();
+  const checkedAt = new Date().toISOString();
+  if (!server.command) {
+    return {
+      serverId: server.id,
+      name: server.name,
+      status: "unknown",
+      latencyMs: 0,
+      toolCount: null,
+      tools: null,
+      instructions: null,
+      error: "No command to dial — unknown transport",
+      checkedAt,
+    };
+  }
+  const { command, args } = splitCommand(server.command);
+  const helper = McpClient.forStdio(command, args, undefined, {
+    timeoutMs,
+    clientInfo: { name: "paseo-mcp-health", version: "1.0.0" },
+  });
+  try {
+    if (opts.includeTools !== false) {
+      const list = await helper.listTools();
+      const tools = list.map((t) => t.name);
+      const toolDetails: ToolInfo[] = list.map((t) => ({
+        name: t.name,
+        description: t.description,
+        inputSchema: t.inputSchema as ToolInfo["inputSchema"],
+      }));
+      const latencyMs = Date.now() - started;
+      return {
+        serverId: server.id,
+        name: server.name,
+        status: "healthy",
+        latencyMs,
+        toolCount: tools.length,
+        tools,
+        toolDetails,
+        instructions: null,
+        error: null,
+        checkedAt,
+      };
+    }
+    const ping = await helper.ping();
+    const latencyMs = Date.now() - started;
+    if (!ping.healthy) {
+      return {
+        serverId: server.id,
+        name: server.name,
+        status: "down",
+        latencyMs,
+        toolCount: null,
+        tools: null,
+        toolDetails: null,
+        instructions: null,
+        error: ping.error ?? "ping failed",
+        checkedAt,
+      };
+    }
+    return {
+      serverId: server.id,
+      name: server.name,
+      status: "healthy",
+      latencyMs,
+      toolCount: null,
+      tools: null,
+      toolDetails: null,
+      instructions: null,
+      error: null,
+      checkedAt,
+    };
+  } catch (e) {
+    const latencyMs = Date.now() - started;
+    const stderr = helper.getStderr();
+    const base = e instanceof Error ? e.message : String(e);
+    return {
+      serverId: server.id,
+      name: server.name,
+      status: "down",
+      latencyMs,
+      toolCount: null,
+      tools: null,
+      toolDetails: null,
+      instructions: null,
+      error: stderr ? `${base}\nRecent stderr:\n${stderr}` : base,
+      checkedAt,
+    };
+  } finally {
+    try {
+      await helper.close();
+    } catch {}
+  }
+}
+
 function transportFor(server: McpServer): { transport: InstanceType<typeof StdioClientTransport> | InstanceType<typeof SSEClientTransport> | InstanceType<typeof StreamableHTTPClientTransport>; kind: string } | null {
   if (server.url) {
     // Prefer StreamableHTTP, fallback to SSE inside SDK handles it.
@@ -98,6 +202,12 @@ export async function checkMcpServerHealth(
   server: McpServer,
   opts: HealthCheckOptions = {},
 ): Promise<HealthResult> {
+  // stdio dials through the helper McpClient (ring-buffered stderr,
+  // non-JSON stdout filtering, tree-kill cleanup). HTTP/SSE stay on the SDK.
+  if (server.command && !server.url) {
+    return checkStdioWithHelper(server, opts);
+  }
+
   const timeoutMs = opts.timeoutMs ?? 7000;
   const started = Date.now();
   const checkedAt = new Date().toISOString();
@@ -198,6 +308,23 @@ export async function callMcpServerTool(
   args: Record<string, unknown> = {},
   timeoutMs = 15000,
 ): Promise<ToolCallResult> {
+  // stdio execution through the helper McpClient; HTTP/SSE stay on the SDK.
+  if (server.command && !server.url) {
+    const { command, args: argv } = splitCommand(server.command);
+    const helper = McpClient.forStdio(command, argv, undefined, {
+      timeoutMs,
+      clientInfo: { name: "paseo-mcp-runner", version: "1.0.0" },
+    });
+    try {
+      const result = await helper.callTool(toolName, args);
+      return result as ToolCallResult;
+    } finally {
+      try {
+        await helper.close();
+      } catch {}
+    }
+  }
+
   const resolved = transportFor(server);
   if (!resolved) {
     throw new Error(`Cannot execute tool on ${server.name}: unknown transport`);

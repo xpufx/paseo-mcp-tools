@@ -5,9 +5,12 @@ import path from "node:path";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import type { McpServerSchema } from "./mcp.shared";
 import { z } from "zod";
+import { createPluginLogger, redactSecrets } from "paseo-plugin-helper/server";
 import { probeForProvider } from "./providers";
 import { paseo as paseoProbe } from "./providers/catalog";
 import { PLUGIN_VERSION } from "./version";
+
+export const log = createPluginLogger("mcp-tools");
 // Bundled health — SDK inlined so `paseo plugin add` doesn't need to resolve @modelcontextprotocol/sdk
 import { checkMany, checkMcpServerHealth, callMcpServerTool } from "./health/health.bundled.mjs";
 
@@ -35,9 +38,11 @@ const PASEO_TOOLS: Array<{ name: string; description: string; category: string }
 ];
 
 function redact(text: string): string {
-  return text
-    .replace(/"([^"]*(?:token|secret|key|password|auth)[^"]*)"\s*:\s*"[^"]*"/gi, '"$1": "•••"')
-    .replace(/(token|secret|key|password|auth)=[^\s"']+/gi, "$1=•••");
+  return redactSecrets(text, { mask: "•••" });
+}
+
+function redactConfig(def: unknown): string {
+  return JSON.stringify(redactSecrets(def, { mask: "•••" }), null, 2);
 }
 
 async function loadAgent(agentId: string, context: PluginHandlerContext) {
@@ -132,7 +137,7 @@ export async function discoverLiveServers(
         url,
         description: url ?? command ?? JSON.stringify(def).slice(0, 80),
         hasSecrets: Boolean(def.env || def.headers),
-        configPreview: redact(JSON.stringify(def, null, 2)),
+        configPreview: redactConfig(def),
       });
     }
 
@@ -141,9 +146,14 @@ export async function discoverLiveServers(
       if (servers.some((existing) => existing.name === s.name)) continue;
       servers.push(s);
     }
-    if (probeResult.error) error = probeResult.error;
+    if (probeResult.error) {
+      error = probeResult.error;
+      log.warn("Provider probe reported error", { provider: agent.provider, error });
+    }
+    log.info("Discovered live servers", { provider: agent.provider, count: servers.length });
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
+    log.error("Failed to discover live servers", { provider: agent.provider, error });
   }
 
   return { servers, error };
@@ -233,7 +243,7 @@ export function createDiagnoseMcpHandler() {
           target: `Paseo Agent Record (${input.agentId})`,
           status: "found",
           details: `Found record with ${names.length} MCP server(s): ${names.join(", ") || "none"}`,
-          contentPreview: redact(JSON.stringify(cfg.mcpServers ?? {}, null, 2)),
+          contentPreview: redactConfig(cfg.mcpServers ?? {}),
         });
       } else {
         steps.push({
