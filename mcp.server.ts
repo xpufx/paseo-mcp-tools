@@ -11,8 +11,9 @@ import { paseo as paseoProbe } from "./providers/catalog";
 import { PLUGIN_VERSION } from "./version";
 
 export const log = createPluginLogger("mcp-tools");
-// Bundled health — helper MCP client inlined so `paseo plugin add` resolves zero extra deps
-import { checkMany, checkMcpServerHealth, callMcpServerTool } from "./health/health.bundled.mjs";
+// Direct source import. The helper MCP client has zero runtime deps,
+// so no bundling step is needed for the daemon to resolve it.
+import { checkMany, checkMcpServerHealth, callMcpServerTool } from "./health/health.server";
 
 type McpServer = z.infer<typeof McpServerSchema>;
 

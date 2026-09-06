@@ -7,6 +7,7 @@ export function useMcpQuery(agentId: string) {
     gcTime: 5 * 60_000,
     refetchOnMount: "always",
     refetchOnWindowFocus: false,
+    enabled: Boolean(agentId),
   });
 }
 
@@ -23,7 +24,7 @@ export function useMcpHealthQuery(
     refetchOnMount: "always",
     refetchOnWindowFocus: false,
     refetchInterval: interval,
-    enabled: isOpen,
+    enabled: isOpen && Boolean(agentId),
   });
 }
 
