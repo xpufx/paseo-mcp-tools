@@ -453,14 +453,38 @@ function McpModalContent({ agentId, close, theme, layout }: RenderModalProps) {
                   {filteredTools.map((toolName) => {
                     const details = health?.toolDetails?.find((d) => d.name === toolName);
                     return (
-                      <Button
+                      <Pressable
                         key={toolName}
-                        label={details?.description ? `${toolName} — ${details.description}` : toolName}
-                        variant="ghost"
-                        size="sm"
-                        icon="Play"
                         onPress={() => openToolRunner(toolName)}
-                      />
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: 8,
+                          borderRadius: 6,
+                          backgroundColor: colors.foregroundMuted + "10",
+                          borderWidth: 1,
+                          borderColor: colors.foregroundMuted + "18",
+                        }}
+                      >
+                        <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                          <Text
+                            numberOfLines={1}
+                            style={{ color: colors.foreground, fontSize: 12, fontWeight: "600", fontFamily: "monospace", textAlign: "left" }}
+                          >
+                            {toolName}
+                          </Text>
+                          {details?.description ? (
+                            <Text numberOfLines={2} style={{ color: colors.foregroundMuted, fontSize: 11, textAlign: "left" }}>
+                              {details.description}
+                            </Text>
+                          ) : null}
+                        </View>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 4, backgroundColor: colors.accent + "20", flexShrink: 0 }}>
+                          <Icon name="Play" size={10} color={colors.accent} />
+                          <Text style={{ color: colors.accent, fontSize: 11, fontWeight: "600" }}>Run</Text>
+                        </View>
+                      </Pressable>
                     );
                   })}
                 </View>
