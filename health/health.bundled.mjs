@@ -2110,6 +2110,7 @@ var McpHttpClient = class {
   initPromise;
   abortController = new AbortController();
   postUrl;
+  sessionId;
   isSse = false;
   sseConnectPromise;
   /**
@@ -2212,7 +2213,7 @@ var McpHttpClient = class {
       }
     }
   }
-  async sendRequest(method, params, timeoutMs) {
+  async sendRequest(method, params, timeoutMs, retryOnSessionExpired = true) {
     const timeout = timeoutMs ?? this.options.timeoutMs ?? 1e4;
     const id = crypto.randomUUID();
     const payload = {
@@ -2230,19 +2231,41 @@ var McpHttpClient = class {
         reject(new Error(`HTTP MCP request "${method}" timed out after ${timeout}ms.`));
       }, timeout);
       this.pendingRequests.set(id, { resolve, reject, timer });
+      const reqHeaders = {
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+        ...this.options.headers
+      };
+      if (this.sessionId) {
+        reqHeaders["Mcp-Session-Id"] = this.sessionId;
+      }
       fetch(this.postUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json, text/event-stream",
-          ...this.options.headers
-        },
+        headers: reqHeaders,
         body: JSON.stringify(payload),
         signal: this.abortController.signal
       }).then(async (res) => {
+        const sid = res.headers.get("mcp-session-id");
+        if (sid) {
+          this.sessionId = sid;
+        }
         if (!res.ok) {
           clearTimeout(timer);
           this.pendingRequests.delete(id);
+          if (res.status === 404 && this.sessionId && retryOnSessionExpired && method !== "initialize") {
+            this.sessionId = void 0;
+            this.initialized = false;
+            this.initPromise = void 0;
+            try {
+              await this.initialize();
+              const retried = await this.sendRequest(method, params, timeoutMs, false);
+              resolve(retried);
+              return;
+            } catch (retryErr) {
+              reject(retryErr);
+              return;
+            }
+          }
           reject(new Error(`MCP HTTP POST returned HTTP ${res.status}: ${res.statusText}`));
           return;
         }
@@ -2264,13 +2287,17 @@ var McpHttpClient = class {
       method,
       ...params !== void 0 ? { params } : {}
     };
+    const reqHeaders = {
+      "Content-Type": "application/json",
+      ...this.options.headers
+    };
+    if (this.sessionId) {
+      reqHeaders["Mcp-Session-Id"] = this.sessionId;
+    }
     try {
       await fetch(this.postUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...this.options.headers
-        },
+        headers: reqHeaders,
         body: JSON.stringify(payload),
         signal: this.abortController.signal
       });
@@ -2347,6 +2374,21 @@ var McpHttpClient = class {
     return result;
   }
   async close() {
+    if (this.sessionId) {
+      const sid = this.sessionId;
+      this.sessionId = void 0;
+      try {
+        await fetch(this.postUrl, {
+          method: "DELETE",
+          headers: {
+            "Mcp-Session-Id": sid,
+            ...this.options.headers
+          },
+          signal: AbortSignal.timeout(2e3)
+        });
+      } catch {
+      }
+    }
     this.abortController.abort();
     for (const [, pending] of this.pendingRequests.entries()) {
       clearTimeout(pending.timer);
