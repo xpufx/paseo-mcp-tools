@@ -1,8 +1,8 @@
-import { useToast } from "@getpaseo/plugin/react-native";
+import { Icon, useToast } from "@getpaseo/plugin/react-native";
 import type { PluginClientContext } from "@getpaseo/plugin";
 import { useRpc } from "@getpaseo/plugin";
 import { useMemo, useState } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import {
   AboutSection,
   ActionBar,
@@ -533,14 +533,35 @@ function McpModalContent({ agentId, close, theme, layout }: RenderModalProps) {
                 {items.map((s) => {
                   const h = healthMap.get(s.id) ?? healthMap.get(s.name);
                   return (
-                    <Button
+                    <Pressable
                       key={s.id}
-                      label={`${s.name} · ${s.transport}${h && h.toolCount !== null ? ` · ${h.toolCount} tools` : ""}${h ? ` · ${h.latencyMs}ms` : ""}`}
-                      variant="ghost"
-                      size="sm"
-                      icon="Plug"
-                      onPress={() => void openDetail(s.id)}
-                    />
+                      onPress={() => {
+                        triggerHaptic("light");
+                        void openDetail(s.id);
+                      }}
+                      style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.foregroundMuted + "18" }}
+                    >
+                      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1, minWidth: 0 }}>
+                          <StatusDot variant={statusVariant(h?.status)} size="sm" />
+                          <Text numberOfLines={1} style={{ color: colors.foreground, fontWeight: "600", flexShrink: 1 }}>
+                            {s.name}
+                          </Text>
+                          <Badge label={s.transport} variant="neutral" />
+                          {s.hasSecrets ? <Icon name="KeyRound" size={12} color={colors.foregroundMuted} /> : null}
+                        </View>
+                        {h ? (
+                          <Text style={{ color: colors.foregroundMuted, fontSize: 11, flexShrink: 0 }}>
+                            {h.latencyMs}ms{h.toolCount !== null ? ` · ${h.toolCount} tools` : ""}
+                          </Text>
+                        ) : healthQuery.isFetching ? (
+                          <ActivityIndicator size="small" color={colors.foregroundMuted} />
+                        ) : null}
+                      </View>
+                      <Text style={{ color: colors.foregroundMuted, fontSize: 12, marginTop: 2 }} numberOfLines={2}>
+                        {s.description || s.command || s.url || "—"}
+                      </Text>
+                    </Pressable>
                   );
                 })}
               </View>
