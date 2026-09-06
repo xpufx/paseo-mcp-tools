@@ -2,7 +2,7 @@
 
 All notable changes to `paseo-mcp-tools` are documented in this file.
 
-## [Unreleased]
+## [v0.1.4] - 2026-09-06
 
 ### Changed
 - **Ported to paseo-plugin-helper** (`github:xpufx/paseo-plugin-helper`):
