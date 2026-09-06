@@ -753,6 +753,7 @@ function McpModalContent({ agentId, close, theme, layout }: RenderModalProps) {
           version={PLUGIN_VERSION}
           author="xpufx"
           repository="https://github.com/xpufx/paseo-mcp-tools"
+          issues="https://github.com/xpufx/paseo-mcp-tools/issues"
           license="MIT"
           logo="Plug"
           extraItems={[
