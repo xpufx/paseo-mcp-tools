@@ -1,4 +1,4 @@
-import { useRpcQuery, type RefreshRate } from "paseo-plugin-helper/client";
+import { REFRESH_INTERVALS, useRpcQuery, type RefreshRate } from "paseo-plugin-helper/client";
 import { checkMcpHealth, listMcp } from "./mcp.shared";
 
 export function useMcpQuery(agentId: string) {
@@ -15,10 +15,8 @@ export function useMcpHealthQuery(
   serverId: string | undefined,
   opts: { isOpen?: boolean; rate?: RefreshRate } = {},
 ) {
-  const { isOpen = true, rate = "5s" } = opts;
-  const interval = !isOpen || rate === "paused"
-    ? false
-    : rate === "1s" ? 1000 : rate === "2s" ? 2000 : rate === "10s" ? 10_000 : 5000;
+  const { isOpen = true, rate = "30s" } = opts;
+  const interval = !isOpen ? false : (REFRESH_INTERVALS[rate] ?? false);
   return useRpcQuery(checkMcpHealth, { agentId, serverId }, {
     staleTime: 0,
     gcTime: 5 * 60_000,

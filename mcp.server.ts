@@ -11,7 +11,7 @@ import { paseo as paseoProbe } from "./providers/catalog";
 import { PLUGIN_VERSION } from "./version";
 
 export const log = createPluginLogger("mcp-tools");
-// Bundled health — SDK inlined so `paseo plugin add` doesn't need to resolve @modelcontextprotocol/sdk
+// Bundled health — helper MCP client inlined so `paseo plugin add` resolves zero extra deps
 import { checkMany, checkMcpServerHealth, callMcpServerTool } from "./health/health.bundled.mjs";
 
 type McpServer = z.infer<typeof McpServerSchema>;

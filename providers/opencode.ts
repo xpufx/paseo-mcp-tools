@@ -1,12 +1,9 @@
 import os from "node:os";
 import path from "node:path";
 import { safeSpawn } from "paseo-plugin-helper/server";
+import { stripAnsi } from "paseo-plugin-helper/shared";
 import type { McpProbe, ProbeContext, McpServer } from "../discovery/types";
 import { redact } from "../discovery/extract";
-
-function stripAnsi(s: string): string {
-  return s.replace(/\x1b\[[0-9;]*m/g, "");
-}
 
 function parseOpencodeMcpList(output: string, cfgPath: string): McpServer[] {
   const clean = stripAnsi(output);

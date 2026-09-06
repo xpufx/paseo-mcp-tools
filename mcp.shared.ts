@@ -140,7 +140,7 @@ export const diagnoseMcp = defineContract({
 });
 
 export const McpToolsSettingsSchema = z.object({
-  healthPollingRate: z.enum(["1s", "2s", "5s", "10s", "paused"]).default("5s"),
+  healthPollingRate: z.enum(["1s", "2s", "5s", "10s", "15s", "30s", "60s", "5m", "paused"]).default("30s"),
   flairRadius: z.enum(["sharp", "rounded", "pill"]).default("rounded"),
   flairDensity: z.enum(["compact", "comfortable", "spacious"]).default("comfortable"),
   flairSurface: z.enum(["flat", "tinted", "elevated"]).default("flat"),

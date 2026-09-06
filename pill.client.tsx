@@ -367,7 +367,7 @@ function McpModalContent({ agentId, close, theme, layout }: RenderModalProps) {
               <Card>
                 <Card.Header
                   title={toolResult.isError ? "✕ Execution Failed" : "✓ Result"}
-                  value={
+                  badge={
                     <Badge
                       label={toolResult.isError ? "error" : "ok"}
                       variant={toolResult.isError ? "danger" : "success"}
@@ -400,7 +400,7 @@ function McpModalContent({ agentId, close, theme, layout }: RenderModalProps) {
           <Card>
             <Card.Header
               title={server?.name ?? selected}
-              value={server ? <Badge label={server.transport} variant="neutral" /> : undefined}
+              badge={server ? <Badge label={server.transport} variant="neutral" /> : undefined}
             />
             <Text style={{ color: colors.foregroundMuted, fontSize: 11, fontFamily: "monospace" }}>
               {detail.path}
@@ -582,7 +582,7 @@ function McpModalContent({ agentId, close, theme, layout }: RenderModalProps) {
           <Card>
             <Card.Header
               title={`Probe Diagnostic Report (${PLUGIN_VERSION})`}
-              value={<Badge label={`${diagnosticData.discoveredServerCount} servers`} variant="success" />}
+              badge={<Badge label={`${diagnosticData.discoveredServerCount} servers`} variant="success" />}
             />
             <Text style={{ color: colors.foregroundMuted, fontSize: 12 }}>
               Provider: {diagnosticData.provider}
@@ -603,7 +603,7 @@ function McpModalContent({ agentId, close, theme, layout }: RenderModalProps) {
             <Card key={idx}>
               <Card.Header
                 title={step.target}
-                value={<Badge label={step.status} variant={statusVariant(step.status === "found" ? "healthy" : step.status === "error" ? "down" : "unknown")} />}
+                badge={<Badge label={step.status} variant={statusVariant(step.status === "found" ? "healthy" : step.status === "error" ? "down" : "unknown")} />}
               />
               <Text style={{ color: colors.foregroundMuted, fontSize: 11, marginTop: 2 }}>{step.details}</Text>
               {step.contentPreview ? (
@@ -617,7 +617,7 @@ function McpModalContent({ agentId, close, theme, layout }: RenderModalProps) {
           icon="Activity"
           title="No diagnostics yet"
           description="Run host diagnostics to inspect provider MCP probes."
-          action={{ label: "Run Diagnostics", onPress: () => void runDiagnostics() }}
+          actionLabel="Run Diagnostics" onAction={() => void runDiagnostics()}
         />
       )}
     </View>
@@ -629,7 +629,7 @@ function McpModalContent({ agentId, close, theme, layout }: RenderModalProps) {
         <Card.Header title="Health Polling" subtitle="Background refresh rate for server health" />
         <FormRow label="Polling rate" description="Paused disables background health polling">
           <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
-            {(["1s", "2s", "5s", "10s", "paused"] as const).map((r) => (
+            {(["1s", "2s", "5s", "10s", "15s", "30s", "60s", "5m", "paused"] as const).map((r) => (
               <Button
                 key={r}
                 label={r}

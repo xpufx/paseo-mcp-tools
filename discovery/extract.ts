@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { parseJsonc as helperParseJsonc, redactSecrets } from "paseo-plugin-helper/server";
+import { redactSecrets, tryParseJsonc } from "paseo-plugin-helper/server";
 import type { McpServer, DiagnosticStep } from "./types";
 
 export interface CandidatePath {
@@ -21,14 +21,9 @@ export function redact(text: string): string {
  */
 export function parseJsonc(raw: string): unknown | null {
   if (!raw || typeof raw !== "string") return null;
-  try {
-    return helperParseJsonc(raw);
-  } catch {}
-  try {
-    return helperParseJsonc(raw.replace(/,\s*([}\]])/g, "$1"));
-  } catch {
-    return null;
-  }
+  const parsed = tryParseJsonc<unknown>(raw, null);
+  if (parsed !== null) return parsed;
+  return tryParseJsonc<unknown>(raw.replace(/,\s*([}\]])/g, "$1"), null);
 }
 
 /**
