@@ -22,6 +22,6 @@
     "zod": "^4.4.3"
   },
   "dependencies": {
-    "paseo-plugin-helper": "file:../../../../code/paseo-plugin-helper"
+    "paseo-plugin-helper": "github:xpufx/paseo-plugin-helper"
   }
 }
