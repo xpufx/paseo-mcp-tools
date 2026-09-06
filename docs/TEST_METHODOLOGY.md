@@ -25,5 +25,5 @@ With connections healthy, we ran real commands through the tool runner. We picke
 
 ### 5. Packaging & Live Plugin Reload
 Finally, we tested the build and installation flow:
-- We verified that protocol libraries get bundled directly into the build so the plugin doesn't break on a machine without those packages installed globally.
+- We verified that the zero-dependency helper MCP client needs no bundling step and no global packages, so the plugin runs on any machine with the daemon alone.
 - We installed the build into the running daemon, triggered a hot reload, watched the daemon logs to verify clean startup with no warnings, and clicked through the UI to verify everything loaded and ran.

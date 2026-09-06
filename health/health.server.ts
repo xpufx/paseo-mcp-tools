@@ -1,12 +1,12 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { McpClient } from "paseo-plugin-helper/mcp";
+import { withTimeout } from "paseo-plugin-helper/shared";
 import type { McpServer } from "../mcp.shared";
 
 // GTD: generic health check that works with *every* MCP.
 // This is a CLIENT — we are not an MCP server, we just dial MCP servers.
 // Runs on the Paseo daemon (Node, can spawn), no extra daemon needed.
+// All transports (stdio, HTTP, SSE) go through the zero-dependency
+// helper McpClient — no @modelcontextprotocol/sdk required.
 
 export type HealthStatus = "healthy" | "degraded" | "down" | "unknown";
 
@@ -49,53 +49,56 @@ export interface HealthCheckOptions {
   includeTools?: boolean; // default true (list_tools)
 }
 
-function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  let t: NodeJS.Timeout;
-  return Promise.race([
-    p,
-    new Promise<never>((_, reject) => {
-      t = setTimeout(() => reject(new Error(`${label} timeout after ${ms}ms`)), ms);
-    }),
-  ]).finally(() => clearTimeout(t));
+type HelperClient = ReturnType<typeof McpClient.forStdio> | ReturnType<typeof McpClient.forHttp>;
+
+// command is e.g. "npx -y some-mcp" stored as string — first token is the
+// executable, the rest are args.
+function splitCommand(command: string): { command: string; args: string[] } {
+  const parts = command.trim().split(/\s+/);
+  return { command: parts[0], args: parts.slice(1) };
 }
 
-// Resolve transport from McpServer's command/url.
-// For stdio we need env — but we redact in configPreview. For health we try
-// without extra env first; Paseo's server already has process.env.
-// If server has secrets, caller can pass resolved env via options later.
-function transportFor(server: McpServer): { transport: InstanceType<typeof StdioClientTransport> | InstanceType<typeof SSEClientTransport> | InstanceType<typeof StreamableHTTPClientTransport>; kind: string } | null {
+function dial(server: McpServer, timeoutMs: number): HelperClient | null {
+  const clientInfo = { name: "paseo-mcp-health", version: "1.0.0" };
   if (server.url) {
-    if (server.transport === "sse") {
-      return {
-        transport: new SSEClientTransport(new URL(server.url)) as unknown as InstanceType<typeof SSEClientTransport>,
-        kind: "sse",
-      };
-    }
-    try {
-      return {
-        transport: new StreamableHTTPClientTransport(new URL(server.url)) as unknown as InstanceType<typeof StreamableHTTPClientTransport>,
-        kind: "http",
-      };
-    } catch {
-      return {
-        transport: new SSEClientTransport(new URL(server.url)) as unknown as InstanceType<typeof SSEClientTransport>,
-        kind: "sse",
-      };
-    }
+    return McpClient.forHttp(server.url, { timeoutMs, clientInfo });
   }
   if (server.command) {
-    // command is e.g. "npx -y some-mcp" stored as string in mcp.server.ts
-    // We need to split it — mcp.server.ts stores raw command string, not args.
-    // Heuristic: first token is command, rest is args.
-    const parts = server.command.trim().split(/\s+/);
-    const command = parts[0];
-    const args = parts.slice(1);
-    return {
-      transport: new StdioClientTransport({ command, args, env: process.env as Record<string, string> }) as unknown as InstanceType<typeof StdioClientTransport>,
-      kind: "stdio",
-    };
+    const { command, args } = splitCommand(server.command);
+    return McpClient.forStdio(command, args, undefined, { timeoutMs, clientInfo });
   }
   return null;
+}
+
+function readInstructions(client: HelperClient): string | null {
+  const raw = client.instructions;
+  return typeof raw === "string" && raw.trim() ? raw.trim() : null;
+}
+
+function stderrOf(client: HelperClient): string | null {
+  if ("getStderr" in client && typeof client.getStderr === "function") {
+    try {
+      const text = (client.getStderr as () => string)();
+      return text?.trim() ? text : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function toToolDetails(list: Array<{ name: string; description?: string; inputSchema?: unknown }>): {
+  tools: string[];
+  toolDetails: ToolInfo[];
+} {
+  return {
+    tools: list.map((t) => t.name),
+    toolDetails: list.map((t) => ({
+      name: t.name,
+      description: t.description,
+      inputSchema: t.inputSchema as ToolInfo["inputSchema"],
+    })),
+  };
 }
 
 export async function checkMcpServerHealth(
@@ -106,8 +109,8 @@ export async function checkMcpServerHealth(
   const started = Date.now();
   const checkedAt = new Date().toISOString();
 
-  const resolved = transportFor(server);
-  if (!resolved) {
+  const client = dial(server, timeoutMs);
+  if (!client) {
     return {
       serverId: server.id,
       name: server.name,
@@ -121,78 +124,111 @@ export async function checkMcpServerHealth(
     };
   }
 
-  const client = new Client({ name: "paseo-mcp-health", version: "1.0.0" }, { capabilities: {} });
-
-  try {
-    await withTimeout(client.connect(resolved.transport as never), timeoutMs, "connect");
-
-    // Capture server instructions from initialize — free, no tool call needed.
-    let instructions: string | null = null;
-    try {
-      const raw = (client as unknown as { getInstructions?: () => string | undefined }).getInstructions?.();
-      if (typeof raw === "string" && raw.trim()) instructions = raw.trim();
-    } catch {}
-
-    // Healthy means we got initialize + tools/list. Degraded means connected but list failed.
-    let tools: string[] | null = null;
-    let toolDetails: ToolInfo[] | null = null;
-    let toolCount: number | null = null;
-    let status: HealthStatus = "healthy";
-    let error: string | null = null;
-
-    if (opts.includeTools !== false) {
-      try {
-        const res = await withTimeout(client.listTools(), timeoutMs, "listTools");
-        const list = (res as { tools?: Array<{ name: string; description?: string; inputSchema?: ToolInfo["inputSchema"] }> }).tools ?? [];
-        tools = list.map((t) => t.name);
-        toolDetails = list.map((t) => ({
-          name: t.name,
-          description: t.description,
-          inputSchema: t.inputSchema,
-        }));
-        toolCount = tools.length;
-      } catch (e) {
-        // Connected but can't list tools = degraded
-        status = "degraded";
-        error = e instanceof Error ? e.message : String(e);
-      }
-    }
-
-    const latencyMs = Date.now() - started;
-    // Ensure clean close — transport close is best-effort.
-    try {
-      await client.close();
-    } catch {}
-
-    return {
-      serverId: server.id,
-      name: server.name,
-      status,
-      latencyMs,
-      toolCount,
-      tools,
-      toolDetails,
-      instructions,
-      error,
-      checkedAt,
-    };
-  } catch (e) {
-    const latencyMs = Date.now() - started;
-    try {
-      await client.close();
-    } catch {}
+  const down = (base: string, includeStderr: boolean): HealthResult => {
+    const stderr = includeStderr ? stderrOf(client) : null;
     return {
       serverId: server.id,
       name: server.name,
       status: "down",
-      latencyMs,
+      latencyMs: Date.now() - started,
       toolCount: null,
       tools: null,
       toolDetails: null,
       instructions: null,
-      error: e instanceof Error ? e.message : String(e),
+      error: stderr ? `${base}\nRecent stderr:\n${stderr}` : base,
       checkedAt,
     };
+  };
+
+  try {
+    if (opts.includeTools !== false) {
+      try {
+        const list = await withTimeout(client.listTools(), timeoutMs, "listTools");
+        const { tools, toolDetails } = toToolDetails(list);
+        const result: HealthResult = {
+          serverId: server.id,
+          name: server.name,
+          status: "healthy",
+          latencyMs: Date.now() - started,
+          toolCount: tools.length,
+          tools,
+          toolDetails,
+          instructions: readInstructions(client),
+          error: null,
+          checkedAt,
+        };
+        try {
+          await client.close();
+        } catch {}
+        return result;
+      } catch (e) {
+        // Connected but can't list tools = degraded. Verify reachability first.
+        try {
+          const ping = await withTimeout(client.ping(), timeoutMs, "ping");
+          if (ping.healthy) {
+            const result: HealthResult = {
+              serverId: server.id,
+              name: server.name,
+              status: "degraded",
+              latencyMs: Date.now() - started,
+              toolCount: null,
+              tools: null,
+              toolDetails: null,
+              instructions: readInstructions(client),
+              error: e instanceof Error ? e.message : String(e),
+              checkedAt,
+            };
+            try {
+              await client.close();
+            } catch {}
+            return result;
+          }
+        } catch {}
+        const result = down(e instanceof Error ? e.message : String(e), true);
+        try {
+          await client.close();
+        } catch {}
+        return result;
+      }
+    }
+
+    const ping = await withTimeout(client.ping(), timeoutMs, "ping");
+    const latencyMs = Date.now() - started;
+    const result: HealthResult = ping.healthy
+      ? {
+        serverId: server.id,
+        name: server.name,
+        status: "healthy",
+        latencyMs,
+        toolCount: null,
+        tools: null,
+        toolDetails: null,
+        instructions: readInstructions(client),
+        error: null,
+        checkedAt,
+      }
+      : {
+        serverId: server.id,
+        name: server.name,
+        status: "down",
+        latencyMs,
+        toolCount: null,
+        tools: null,
+        toolDetails: null,
+        instructions: null,
+        error: ping.error ?? "ping failed",
+        checkedAt,
+      };
+    try {
+      await client.close();
+    } catch {}
+    return result;
+  } catch (e) {
+    const result = down(e instanceof Error ? e.message : String(e), true);
+    try {
+      await client.close();
+    } catch {}
+    return result;
   }
 }
 
@@ -202,19 +238,12 @@ export async function callMcpServerTool(
   args: Record<string, unknown> = {},
   timeoutMs = 15000,
 ): Promise<ToolCallResult> {
-  const resolved = transportFor(server);
-  if (!resolved) {
+  const client = dial(server, timeoutMs);
+  if (!client) {
     throw new Error(`Cannot execute tool on ${server.name}: unknown transport`);
   }
-
-  const client = new Client({ name: "paseo-mcp-runner", version: "1.0.0" }, { capabilities: {} });
   try {
-    await withTimeout(client.connect(resolved.transport as never), timeoutMs, "connect");
-    const result = await withTimeout(
-      client.callTool({ name: toolName, arguments: args }),
-      timeoutMs,
-      `callTool:${toolName}`,
-    );
+    const result = await withTimeout(client.callTool(toolName, args), timeoutMs, `callTool:${toolName}`);
     return result as ToolCallResult;
   } finally {
     try {

@@ -17,6 +17,17 @@ Provides an inline UI for checking MCP servers available to an agent session wit
 - **Interactive Tool Runner (User Execution)**: Users can execute any discovered MCP tool directly from the UI without prompting the agent. Features a dynamic schema-driven form with `*REQUIRED` validation, type coercion (boolean, number, object, array, union/nullable types), live tool execution via host RPC (`mcp.call_tool`), and output inspection with 1-tap clipboard copying.
 - **Real-Time Tool Search**: Server Detail view features a real-time search input filtering across tool names and descriptions, making servers with large command sets (like Paseo, Forgejo, Chrome DevTools) fast and easy to navigate.
 - **Diagnostics**: Full polymorphic probe checklist verifying paths, permissions, and agent records across hosts.
+- **Settings & Visual Flair**: Health polling rate (1s to 5m, or paused) plus corner radius, density, surface style, and brand accent, persisted atomically daemon-side and applied live.
+- **About**: Plugin branding, version, repository and issue links, live environment facts, and 1-tap Copy Diagnostics for issue triage.
+
+## Built with paseo-plugin-helper
+
+This plugin is built on [paseo-plugin-helper](https://github.com/xpufx/paseo-plugin-helper), the shared developer toolkit and design system for Paseo plugins:
+
+- **UI**: `registerComposerPill`, `ModalBody`, `Tabs`, `Card`, `Button`, `Badge`, `StatusDot`, `SearchInput`, `EmptyState`, `CodeBlock`, `TextInput`, `Toggle`, `FormRow`, `ActionBar`, `AboutSection`, `PluginThemeProvider` with configurable visual flair
+- **Data**: `useRpcQuery` with stale-cache busting, `usePluginSettings` with optimistic updates, `defineContract` / `defineSettingsContract` for end-to-end typed RPC
+- **Daemon**: `createPluginLogger`, `PluginStorage` with atomic writes, `registerSettingsRpc`, `redactSecrets`, `parseJsonc` / `tryParseJsonc`, `safeSpawn`, `stripAnsi`, `withTimeout`, `stampVersion`
+- **MCP**: Zero-dependency `McpClient` for stdio and HTTP/SSE health checks and tool calls, with session handling, SSE response parsing, stderr ring buffering, and process tree cleanup
 
 ## Screenshots
 
@@ -59,10 +70,11 @@ See the complete step-by-step guide in the [write-mcp-provider skill](.agents/sk
 | `providers/<id>.ts` | Per-CLI live probe — isolated, contract `McpProbe` (`antigravity.ts`, `claude.ts`, etc.) |
 | `providers/paseo.ts` | Dedicated host daemon probe discovering Paseo control plane & tools |
 | `providers/catalog.ts` | 1-line re-export catalog for zero-boilerplate probe registration |
-| `health/health.server.ts` | Generic MCP SDK client — `instructions`, schema-aware `tools`, and `callMcpServerTool` |
-| `mcp-query.client.tsx` | `useMcpQuery` shared pill/modal, 30m timer + manual Refresh |
-| `pill.client.tsx` | Pill, modal, server details, diagnostics, real-time search, and interactive Tool Runner UI |
-| `scripts/version.mjs` | Offline build-time version stamper (tag / beta-[hash]) |
+| `health/health.server.ts` | Zero-dependency helper MCP client for stdio and HTTP/SSE — `instructions`, schema-aware `tools`, and `callMcpServerTool` |
+| `mcp-query.client.tsx` | `useMcpQuery` / `useMcpHealthQuery` via helper React Query hooks, stale-cache busting, `enabled` guards, settings-driven polling |
+| `pill.client.tsx` | Pill, tabbed modal (Servers, Diagnostics, Settings, About), server details, and interactive Tool Runner UI |
+| `settings.server.ts` | Atomic settings storage plus typed get/update/reset RPC handlers via the helper |
+| `scripts/version.mjs` | Build-time version stamper via helper `stampVersion` |
 | `docs/TEST_METHODOLOGY.md` | Test procedures, adapter verification, and QA methodology |
 
 ## Install & Updates

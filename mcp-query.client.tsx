@@ -1,17 +1,30 @@
-import { useQuery } from "@tanstack/react-query";
-import { useRpc } from "@getpaseo/plugin";
-import { listMcp } from "./mcp.shared";
+import { REFRESH_INTERVALS, useRpcQuery, type RefreshRate } from "paseo-plugin-helper/client";
+import { checkMcpHealth, listMcp } from "./mcp.shared";
 
 export function useMcpQuery(agentId: string) {
-  const callList = useRpc(listMcp);
-  return useQuery({
-    queryKey: ["mcp", agentId],
-    queryFn: () => callList({ agentId }),
-    staleTime: 30 * 60_000,
-    gcTime: 35 * 60_000,
-    refetchInterval: 30 * 60_000,
+  return useRpcQuery(listMcp, { agentId }, {
+    staleTime: 0,
+    gcTime: 5 * 60_000,
+    refetchOnMount: "always",
     refetchOnWindowFocus: false,
-    refetchOnMount: false,
+    enabled: Boolean(agentId),
+  });
+}
+
+export function useMcpHealthQuery(
+  agentId: string,
+  serverId: string | undefined,
+  opts: { isOpen?: boolean; rate?: RefreshRate } = {},
+) {
+  const { isOpen = true, rate = "30s" } = opts;
+  const interval = !isOpen ? false : (REFRESH_INTERVALS[rate] ?? false);
+  return useRpcQuery(checkMcpHealth, { agentId, serverId }, {
+    staleTime: 0,
+    gcTime: 5 * 60_000,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: false,
+    refetchInterval: interval,
+    enabled: isOpen && Boolean(agentId),
   });
 }
 

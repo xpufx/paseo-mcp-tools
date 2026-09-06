@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { redactSecrets, tryParseJsonc } from "paseo-plugin-helper/server";
 import type { McpServer, DiagnosticStep } from "./types";
 
 export interface CandidatePath {
@@ -8,43 +9,21 @@ export interface CandidatePath {
 }
 
 /**
- * Redacts tokens, keys, passwords, and sensitive auth data.
+ * Redacts tokens, keys, passwords, and sensitive auth data via helper.
  */
 export function redact(text: string): string {
-  return text
-    .replace(/"([^"]*(?:token|secret|key|password|auth)[^"]*)"\s*:\s*"[^"]*"/gi, '"$1": "•••"')
-    .replace(/(token|secret|key|password|auth)=[^\s"']+/gi, "$1=•••");
+  return redactSecrets(text, { mask: "•••" });
 }
 
 /**
- * Universal JSON / JSONC / Trailing-comma tolerant parser.
- * Crucially preserves URLs containing "http://" or "https://".
+ * Universal JSON / JSONC / Trailing-comma tolerant parser via helper.
+ * Returns null instead of throwing so callers degrade gracefully.
  */
 export function parseJsonc(raw: string): unknown | null {
   if (!raw || typeof raw !== "string") return null;
-
-  // 1. Native fast parse
-  try {
-    return JSON.parse(raw);
-  } catch {}
-
-  // 2. Trailing comma stripping
-  try {
-    const withoutTrailingCommas = raw.replace(/,\s*([}\]])/g, "$1");
-    return JSON.parse(withoutTrailingCommas);
-  } catch {}
-
-  // 3. Comment stripper (line by line, only if // is outside quotes)
-  try {
-    const lines = raw.split("\n").map((line) => {
-      const trimmed = line.trim();
-      if (trimmed.startsWith("//") || trimmed.startsWith("/*")) return "";
-      return line;
-    });
-    return JSON.parse(lines.join("\n").replace(/,\s*([}\]])/g, "$1"));
-  } catch {
-    return null;
-  }
+  const parsed = tryParseJsonc<unknown>(raw, null);
+  if (parsed !== null) return parsed;
+  return tryParseJsonc<unknown>(raw.replace(/,\s*([}\]])/g, "$1"), null);
 }
 
 /**
@@ -176,7 +155,7 @@ export function normalizeMcpServer(
     url,
     description,
     hasSecrets,
-    configPreview: redact(JSON.stringify(def, null, 2)),
+    configPreview: JSON.stringify(redactSecrets(def, { mask: "•••" }), null, 2),
   };
 }
 

@@ -1,21 +1,5 @@
-import { z, type ZodType } from "zod";
-
-export interface PluginRpcContract<
-  InputSchema extends ZodType = ZodType,
-  OutputSchema extends ZodType = ZodType,
-> {
-  name: string;
-  input: InputSchema;
-  output: OutputSchema;
-}
-
-export function defineRpc<InputSchema extends ZodType, OutputSchema extends ZodType>(definition: {
-  name: string;
-  input: InputSchema;
-  output: OutputSchema;
-}): PluginRpcContract<InputSchema, OutputSchema> {
-  return definition;
-}
+import { z } from "zod";
+import { defineContract, defineSettingsContract } from "paseo-plugin-helper/shared";
 
 export const McpSourceSchema = z.object({
   kind: z.enum(["project", "repo", "personal", "global", "paseo", "session"]),
@@ -43,8 +27,9 @@ export const PaseoToolSchema = z.object({
   category: z.string(),
 });
 
-export const listMcp = defineRpc({
+export const listMcp = defineContract({
   name: "mcp.list",
+  description: "Lists live MCP servers for this agent session",
   input: z.object({ agentId: z.string() }),
   output: z.object({
     provider: z.string(),
@@ -88,8 +73,9 @@ export const HealthResultSchema = z.object({
   checkedAt: z.string(),
 });
 
-export const checkMcpHealth = defineRpc({
+export const checkMcpHealth = defineContract({
   name: "mcp.health",
+  description: "Health-checks MCP servers via initialize + tools/list",
   input: z.object({ agentId: z.string(), serverId: z.string().optional() }),
   output: z.object({
     results: z.array(HealthResultSchema),
@@ -97,8 +83,9 @@ export const checkMcpHealth = defineRpc({
   }),
 });
 
-export const callMcpTool = defineRpc({
+export const callMcpTool = defineContract({
   name: "mcp.call_tool",
+  description: "Executes a tool on an MCP server",
   input: z.object({
     agentId: z.string(),
     serverId: z.string(),
@@ -112,8 +99,9 @@ export const callMcpTool = defineRpc({
   }),
 });
 
-export const readMcp = defineRpc({
+export const readMcp = defineContract({
   name: "mcp.read",
+  description: "Reads redacted config detail for an MCP server",
   input: z.object({ agentId: z.string(), serverId: z.string() }),
   output: z.object({
     name: z.string(),
@@ -134,8 +122,9 @@ export const DiagnosticStepSchema = z.object({
 
 export type DiagnosticStep = z.infer<typeof DiagnosticStepSchema>;
 
-export const diagnoseMcp = defineRpc({
+export const diagnoseMcp = defineContract({
   name: "mcp.diagnose",
+  description: "Runs provider probe diagnostics for an agent",
   input: z.object({ agentId: z.string() }),
   output: z.object({
     report: z.string(),
@@ -158,8 +147,9 @@ export const GatewayUpstreamServerSchema = z.object({
   uptime: z.number().optional(),
 });
 
-export const gatewayStatus = defineRpc({
+export const gatewayStatus = defineContract({
   name: "mcp.gateway.status",
+  description: "Reports gateway daemon status and upstream fleet",
   input: z.object({}),
   output: z.object({
     online: z.boolean(),
@@ -173,8 +163,9 @@ export const gatewayStatus = defineRpc({
   }),
 });
 
-export const gatewayAddServer = defineRpc({
+export const gatewayAddServer = defineContract({
   name: "mcp.gateway.add_server",
+  description: "Adds an upstream server to the gateway fleet",
   input: z.object({
     name: z.string(),
     url: z.string().optional(),
@@ -188,18 +179,35 @@ export const gatewayAddServer = defineRpc({
   }),
 });
 
-export const gatewayRemoveServer = defineRpc({
+export const gatewayRemoveServer = defineContract({
   name: "mcp.gateway.remove_server",
+  description: "Removes an upstream server from the gateway fleet",
   input: z.object({ name: z.string() }),
   output: z.object({ ok: z.boolean(), name: z.string() }),
 });
 
-export const gatewayImportHost = defineRpc({
+export const gatewayImportHost = defineContract({
   name: "mcp.gateway.import_host",
+  description: "Imports host MCP configs into the gateway fleet",
   input: z.object({}),
   output: z.object({
     ok: z.boolean(),
     importedCount: z.number(),
     totalServers: z.number(),
   }),
+});
+export const McpToolsSettingsSchema = z.object({
+  healthPollingRate: z.enum(["1s", "2s", "5s", "10s", "15s", "30s", "60s", "5m", "paused"]).default("30s"),
+  flairRadius: z.enum(["sharp", "rounded", "pill"]).default("rounded"),
+  flairDensity: z.enum(["compact", "comfortable", "spacious"]).default("comfortable"),
+  flairSurface: z.enum(["flat", "tinted", "elevated"]).default("flat"),
+  flairAccentColor: z.string().default("#6366f1"),
+});
+
+export type McpToolsSettings = z.infer<typeof McpToolsSettingsSchema>;
+
+export const mcpToolsSettingsContract = defineSettingsContract({
+  name: "mcp-tools.settings",
+  schema: McpToolsSettingsSchema,
+  description: "mcp-tools cache, polling and visual flair settings",
 });

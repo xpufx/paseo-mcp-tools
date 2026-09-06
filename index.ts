@@ -20,8 +20,10 @@ import {
   gatewayRemoveServer,
   gatewayStatus,
   listMcp,
+  mcpToolsSettingsContract,
   readMcp,
 } from "./mcp.shared";
+import { settingsHandlers } from "./settings.server";
 
 export default function contribute(plugin: PluginContext) {
   plugin.handle(listMcp, createListMcpHandler());
@@ -33,6 +35,9 @@ export default function contribute(plugin: PluginContext) {
   plugin.handle(gatewayAddServer, createGatewayAddServerHandler());
   plugin.handle(gatewayRemoveServer, createGatewayRemoveServerHandler());
   plugin.handle(gatewayImportHost, createGatewayImportHostHandler());
+  plugin.handle(mcpToolsSettingsContract.get, settingsHandlers.get);
+  plugin.handle(mcpToolsSettingsContract.update, settingsHandlers.update);
+  plugin.handle(mcpToolsSettingsContract.reset, settingsHandlers.reset);
   plugin.addClientSide(contributeClient);
   return () => {};
 }
