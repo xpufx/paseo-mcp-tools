@@ -2,6 +2,15 @@
 
 All notable changes to `paseo-mcp-tools` are documented in this file.
 
+## [Unreleased]
+
+### Changed
+- **Ported to paseo-plugin-helper** (`github:xpufx/paseo-plugin-helper`):
+  - UI rebuilt on the helper design system (`registerComposerPill`, `ModalBody`, `Tabs`, `Card` family, `AboutSection`) with a tabbed modal (Servers, Diagnostics, Settings, About) and settings-driven visual flair.
+  - Daemon uses helper logger, atomic settings storage, secret redaction, JSONC parsing, `safeSpawn`, and version stamping.
+  - Health checks and tool calls run on the zero-dependency helper `McpClient` for stdio and HTTP/SSE (session handling and SSE response parsing included). The `@modelcontextprotocol/sdk` dependency and the prebuilt `health.bundled.mjs` are gone.
+  - Server-only helper imports stay behind the `.server` module boundary so the Hermes client bundle resolves zero Node builtins.
+
 ## [v0.1.3] - 2026-09-03
 
 ### Added
