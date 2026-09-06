@@ -65,8 +65,12 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 // If server has secrets, caller can pass resolved env via options later.
 function transportFor(server: McpServer): { transport: InstanceType<typeof StdioClientTransport> | InstanceType<typeof SSEClientTransport> | InstanceType<typeof StreamableHTTPClientTransport>; kind: string } | null {
   if (server.url) {
-    // Prefer StreamableHTTP, fallback to SSE inside SDK handles it.
-    // SDK's StreamableHTTPClientTransport takes URL object.
+    if (server.transport === "sse") {
+      return {
+        transport: new SSEClientTransport(new URL(server.url)) as unknown as InstanceType<typeof SSEClientTransport>,
+        kind: "sse",
+      };
+    }
     try {
       return {
         transport: new StreamableHTTPClientTransport(new URL(server.url)) as unknown as InstanceType<typeof StreamableHTTPClientTransport>,

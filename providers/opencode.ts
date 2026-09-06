@@ -45,12 +45,14 @@ export const opencodeProbe: McpProbe = {
   label: "opencode · live",
   matches: (provider) => provider.startsWith("opencode"),
   async probe(ctx: ProbeContext) {
-    const cfgPath = path.join(os.homedir(), ".config", "opencode", "opencode.jsonc");
+    const globalCfg = path.join(os.homedir(), ".config", "opencode", "opencode.jsonc");
+    const localCfg = path.join(ctx.cwd, "opencode.json");
+    const cfgPath = `${globalCfg} + ${localCfg} (cwd-merged)`;
     return new Promise((resolve) => {
       const child = spawn("opencode", ["mcp", "list"], {
         cwd: ctx.cwd,
         env: process.env,
-        timeout: 5000,
+        timeout: 3000,
       });
       let out = "";
       let err = "";

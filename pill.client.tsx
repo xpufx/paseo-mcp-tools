@@ -4,7 +4,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useMcpQuery } from "./mcp-query.client";
 import { useRpc } from "@getpaseo/plugin";
-import { callMcpTool, checkMcpHealth, diagnoseMcp, readMcp, type ToolInfo } from "./mcp.shared";
+import {
+  callMcpTool,
+  checkMcpHealth,
+  diagnoseMcp,
+  gatewayAddServer,
+  gatewayImportHost,
+  gatewayRemoveServer,
+  gatewayStatus,
+  readMcp,
+  type ToolInfo,
+} from "./mcp.shared";
 import { PLUGIN_VERSION } from "./version";
 
 const openers = new Map<string, () => void>();
@@ -25,18 +35,44 @@ function McpModal({
   const callHealth = useRpc(checkMcpHealth);
   const callToolRpc = useRpc(callMcpTool);
   const callDiagnose = useRpc(diagnoseMcp);
+  const callGatewayStatus = useRpc(gatewayStatus);
+  const callGatewayAdd = useRpc(gatewayAddServer);
+  const callGatewayRemove = useRpc(gatewayRemoveServer);
+  const callGatewayImport = useRpc(gatewayImportHost);
+
   const toast = useToast();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
-  const [detail, setDetail] = useState<{ raw: string; redacted: string; path: string } | null>(null);
+  const [detail, setDetail] = useState<{ raw: string; redacted: string; path: string; name?: string } | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [health, setHealth] = useState<{ instructions: string | null; status: "healthy" | "degraded" | "down" | "unknown"; latencyMs: number; toolCount: number | null; tools: string[] | null; toolDetails?: ToolInfo[] | null; error: string | null } | null>(null);
   const [healthLoading, setHealthLoading] = useState(false);
   const [activeTool, setActiveTool] = useState<ToolInfo | null>(null);
+
+  // Gateway fleet state
+  const [gatewayData, setGatewayData] = useState<{
+    online: boolean;
+    controlPort: number;
+    hubPort: number;
+    mcpEndpoint: string;
+    eventsEndpoint: string;
+    configuredServersCount: number;
+    activeUpstreamServersCount: number;
+    upstreamServers: Array<{ name: string; status: string; transport?: string; toolsCount: number; uptime?: number }>;
+  } | null>(null);
+  const [gatewayLoading, setGatewayLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<"gateway" | "servers">("gateway");
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newServerName, setNewServerName] = useState("");
+  const [newServerUrl, setNewServerUrl] = useState("");
+  const [newServerCmd, setNewServerCmd] = useState("");
+  const [addingServer, setAddingServer] = useState(false);
+  const [importingHost, setImportingHost] = useState(false);
   const [toolArgs, setToolArgs] = useState<Record<string, string>>({});
   const [toolExecuting, setToolExecuting] = useState(false);
   const [toolResult, setToolResult] = useState<{ content: Array<{ type: string; text?: string; [key: string]: unknown }>; isError?: boolean } | null>(null);
   const [toolSearch, setToolSearch] = useState("");
+  const [gatewayToolSubServer, setGatewayToolSubServer] = useState<string>("all");
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
   const [diagnosticData, setDiagnosticData] = useState<{
@@ -62,11 +98,102 @@ function McpModal({
     }
   };
 
+  const refreshGateway = useCallback(async () => {
+    try {
+      setGatewayLoading(true);
+      const data = await callGatewayStatus({});
+      setGatewayData(data);
+    } catch {}
+    finally {
+      setGatewayLoading(false);
+    }
+  }, [callGatewayStatus]);
+
+  useEffect(() => {
+    if (open) {
+      void refreshGateway();
+    } else {
+      setSelected(null);
+      setDetail(null);
+      setActiveTool(null);
+      setToolArgs({});
+      setToolResult(null);
+    }
+  }, [open, refreshGateway]);
+
+  const handleAddServer = async () => {
+    const name = newServerName.trim();
+    if (!name) {
+      toast.error("Please enter a server name");
+      return;
+    }
+    if (!newServerUrl.trim() && !newServerCmd.trim()) {
+      toast.error("Please enter a URL or Command");
+      return;
+    }
+    setAddingServer(true);
+    try {
+      const res = await callGatewayAdd({
+        name,
+        url: newServerUrl.trim() || undefined,
+        command: newServerCmd.trim() || undefined,
+      });
+      if (res.ok) {
+        toast.show(`Added ${name} to gateway!`);
+        setNewServerName("");
+        setNewServerUrl("");
+        setNewServerCmd("");
+        setShowAddForm(false);
+        await refreshGateway();
+        await query.refetch();
+      } else {
+        toast.error(res.error || "Failed to add server");
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAddingServer(false);
+    }
+  };
+
+  const handleRemoveServer = async (name: string) => {
+    try {
+      const res = await callGatewayRemove({ name });
+      if (res.ok) {
+        toast.show(`Removed ${name} from gateway`);
+        await refreshGateway();
+        await query.refetch();
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const handleImportHost = async () => {
+    setImportingHost(true);
+    try {
+      const res = await callGatewayImport({});
+      if (res.ok) {
+        toast.show(`Imported ${res.importedCount} host MCPs! Total: ${res.totalServers}`);
+        await refreshGateway();
+        await query.refetch();
+      } else {
+        toast.error("Failed to import host MCPs");
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setImportingHost(false);
+    }
+  };
+
   const term = search.trim().toLowerCase();
   const matches = (s: { name: string; description: string }) =>
     !term || s.name.toLowerCase().includes(term) || s.description.toLowerCase().includes(term);
 
-  const servers = (query.data?.servers ?? []).filter(matches);
+  const isGatewayProvider = query.data?.provider === "gateway";
+  const rawServers = (query.data?.servers ?? []).filter((s) => isGatewayProvider || !s.id.startsWith("gateway:"));
+  const servers = rawServers.filter(matches);
 
   const groupedServers = useMemo(() => {
     const m = new Map<string, typeof servers>();
@@ -80,24 +207,37 @@ function McpModal({
 
   const filteredTools = useMemo(() => {
     if (!health?.tools) return [];
-    if (!toolSearch.trim()) return health.tools;
+    let tools = health.tools;
+
+    if (selected === "gateway:hub" && gatewayToolSubServer !== "all") {
+      const qPrefix = gatewayToolSubServer.toLowerCase();
+      tools = tools.filter((toolName) => {
+        const lower = toolName.toLowerCase();
+        return lower.startsWith(qPrefix + "_") || lower.startsWith(qPrefix + "-") || lower.includes(qPrefix);
+      });
+    }
+
+    if (!toolSearch.trim()) return tools;
     const q = toolSearch.toLowerCase().trim();
-    return health.tools.filter((toolName) => {
+    return tools.filter((toolName) => {
       if (toolName.toLowerCase().includes(q)) return true;
       const details = health.toolDetails?.find((d) => d.name === toolName);
       if (details?.description?.toLowerCase().includes(q)) return true;
       return false;
     });
-  }, [health?.tools, health?.toolDetails, toolSearch]);
+  }, [health?.tools, health?.toolDetails, toolSearch, selected, gatewayToolSubServer]);
 
   const openDetail = useCallback(
     async (id: string) => {
       setSelected(id);
+      setActiveTool(null);
+      setToolArgs({});
+      setToolResult(null);
       setToolSearch("");
       setLoadingDetail(true);
       try {
         const d = await callRead({ agentId, serverId: id });
-        setDetail({ raw: d.raw, redacted: d.redacted, path: d.path });
+        setDetail({ name: d.name, raw: d.raw, redacted: d.redacted, path: d.path });
       } catch (e) {
         toast.error(e instanceof Error ? e.message : String(e));
         setSelected(null);
@@ -154,7 +294,9 @@ function McpModal({
       return;
     }
     const cached = healthMap.get(selected);
-    if (cached) {
+    const isSubServer = selected.startsWith("gateway:") && selected !== "gateway:hub";
+    // If cached entry has bloated tool count (>30 tools for sub-server), ignore cache and fetch fresh
+    if (cached && (!isSubServer || (cached.toolCount !== null && cached.toolCount <= 30))) {
       setHealth(cached);
       setHealthLoading(false);
       return;
@@ -306,7 +448,7 @@ function McpModal({
       <Modal.Content>
         {showDiagnostics ? (
           <View style={{ gap: 12, padding: 16 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
               <Pressable onPress={() => setShowDiagnostics(false)}>
                 <Text style={{ color: theme.colors.accent }}>← Back to list</Text>
               </Pressable>
@@ -323,6 +465,7 @@ function McpModal({
                   borderWidth: 1,
                   borderColor: theme.colors.foregroundMuted,
                   opacity: diagnosticsLoading ? 0.6 : 1,
+                  flexShrink: 0,
                 }}
               >
                 <Icon name="Activity" size={12} color={theme.colors.foregroundMuted} />
@@ -337,8 +480,8 @@ function McpModal({
             ) : diagnosticData ? (
               <View style={{ gap: 12 }}>
                 <View style={{ gap: 4, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: theme.colors.foregroundMuted + "18" }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                    <Text style={{ color: theme.colors.foreground, fontSize: 14, fontWeight: "600" }}>Probe Diagnostic Report ({PLUGIN_VERSION})</Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                    <Text style={{ color: theme.colors.foreground, fontSize: 14, fontWeight: "600", flex: 1, minWidth: 180 }}>Probe Diagnostic Report ({PLUGIN_VERSION})</Text>
                     <Pressable
                       onPress={() => void copy(JSON.stringify(diagnosticData, null, 2))}
                       style={{
@@ -349,6 +492,7 @@ function McpModal({
                         paddingVertical: 4,
                         borderRadius: 6,
                         backgroundColor: theme.colors.foregroundMuted + "14",
+                        flexShrink: 0,
                       }}
                     >
                       <Icon name="Copy" size={11} color={theme.colors.foregroundMuted} />
@@ -359,7 +503,7 @@ function McpModal({
                     Provider: <Text style={{ color: theme.colors.foreground }}>{diagnosticData.provider}</Text>
                     {diagnosticData.probeLabel ? ` (${diagnosticData.probeLabel})` : " (no matching probe in registry)"}
                   </Text>
-                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontFamily: "monospace" }}>CWD: {diagnosticData.cwd}</Text>
+                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontFamily: "monospace" }} numberOfLines={2}>CWD: {diagnosticData.cwd}</Text>
                   <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>
                     Discovered Servers: <Text style={{ color: theme.colors.statusSuccess, fontWeight: "600" }}>{diagnosticData.discoveredServerCount}</Text>
                   </Text>
@@ -385,10 +529,10 @@ function McpModal({
                       }}
                     >
                       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-                        <Text style={{ color: theme.colors.foreground, fontSize: 12, fontWeight: "500", flex: 1 }} numberOfLines={1}>
+                        <Text style={{ color: theme.colors.foreground, fontSize: 12, fontWeight: "500", flex: 1, minWidth: 0 }} numberOfLines={1}>
                           {step.target}
                         </Text>
-                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 0 }}>
                           <Pressable
                             onPress={() => void copy(step.contentPreview ?? step.target)}
                             style={{ padding: 2 }}
@@ -438,8 +582,8 @@ function McpModal({
           </View>
         ) : selected ? (
           <View style={{ gap: 12, padding: 16 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-              <Pressable onPress={() => { setSelected(null); setDetail(null); setToolSearch(""); }}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+              <Pressable onPress={() => { setSelected(null); setDetail(null); setToolSearch(""); setActiveTool(null); setToolArgs({}); setToolResult(null); }}>
                 <Text style={{ color: theme.colors.accent }}>← Back to list</Text>
               </Pressable>
               <Pressable
@@ -464,6 +608,7 @@ function McpModal({
                   paddingVertical: 4,
                   borderRadius: 6,
                   backgroundColor: theme.colors.foregroundMuted + "14",
+                  flexShrink: 0,
                 }}
               >
                 <Icon name="Copy" size={11} color={theme.colors.foregroundMuted} />
@@ -472,17 +617,17 @@ function McpModal({
             </View>
             {activeTool ? (
               <View style={{ gap: 12 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                  <Pressable onPress={() => { setActiveTool(null); setToolResult(null); }}>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                  <Pressable onPress={() => { setActiveTool(null); setToolArgs({}); setToolResult(null); }}>
                     <Text style={{ color: theme.colors.accent }}>← Back to server</Text>
                   </Pressable>
-                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>
+                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, flexShrink: 1 }} numberOfLines={1}>
                     {servers.find((s) => s.id === selected)?.name ?? selected}
                   </Text>
                 </View>
 
                 <View style={{ padding: 12, borderRadius: 8, backgroundColor: theme.colors.foregroundMuted + "0a", borderWidth: 1, borderColor: theme.colors.foregroundMuted + "18", gap: 6 }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
                     <Icon name="Play" size={14} color={theme.colors.accent} />
                     <Text style={{ color: theme.colors.foreground, fontSize: 14, fontWeight: "700" }}>{activeTool.name}</Text>
                   </View>
@@ -504,7 +649,7 @@ function McpModal({
                       const isRequired = (activeTool.inputSchema?.required ?? []).includes(paramName);
                       return (
                         <View key={paramName} style={{ gap: 4 }}>
-                          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                          <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
                             <Text style={{ color: theme.colors.foreground, fontSize: 12, fontWeight: "600" }}>
                               {paramName}
                             </Text>
@@ -585,7 +730,7 @@ function McpModal({
                 {/* Execution Result */}
                 {toolResult ? (
                   <View style={{ marginTop: 8, gap: 6, padding: 12, borderRadius: 8, backgroundColor: toolResult.isError ? theme.colors.statusDanger + "12" : theme.colors.foregroundMuted + "0a", borderWidth: 1, borderColor: toolResult.isError ? theme.colors.statusDanger + "40" : theme.colors.foregroundMuted + "20" }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
                       <Text style={{ color: toolResult.isError ? theme.colors.statusDanger : theme.colors.statusSuccess, fontSize: 12, fontWeight: "700" }}>
                         {toolResult.isError ? "✕ Execution Failed" : "✓ Result"}
                       </Text>
@@ -594,7 +739,7 @@ function McpModal({
                           const text = toolResult.content.map((c) => c.text ?? JSON.stringify(c)).join("\n\n");
                           void copy(text);
                         }}
-                        style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: theme.colors.foregroundMuted + "14" }}
+                        style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: theme.colors.foregroundMuted + "14", flexShrink: 0 }}
                       >
                         <Icon name="Copy" size={10} color={theme.colors.foregroundMuted} />
                         <Text style={{ color: theme.colors.foregroundMuted, fontSize: 10 }}>Copy</Text>
@@ -612,8 +757,8 @@ function McpModal({
               <ActivityIndicator color={theme.colors.foregroundMuted} />
             ) : detail ? (
               <View style={{ gap: 12 }}>
-                <Text style={{ color: theme.colors.foreground, fontSize: 16, fontWeight: "600" }}>{servers.find((s) => s.id === selected)?.name ?? selected}</Text>
-                <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, marginTop: -6 }}>{detail.path}</Text>
+                <Text style={{ color: theme.colors.foreground, fontSize: 16, fontWeight: "600" }} numberOfLines={1}>{servers.find((s) => s.id === selected)?.name ?? selected}</Text>
+                <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, marginTop: -6 }} numberOfLines={2}>{detail.path}</Text>
                 <Pressable onPress={() => void copy(detail.path)}>
                   <Text style={{ color: theme.colors.accent, fontSize: 12 }}>Copy path</Text>
                 </Pressable>
@@ -624,12 +769,12 @@ function McpModal({
                   </View>
                 ) : health ? (
                   <View style={{ marginTop: 8, gap: 10, padding: 12, backgroundColor: theme.colors.foregroundMuted + "10", borderRadius: 8 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
                       <Text style={{ color: getStatusColor(health.status), fontSize: 13 }}>{getStatusDot(health.status)}</Text>
                       <Text style={{ color: theme.colors.foreground, fontSize: 13, fontWeight: "700" }}>
                         {health.latencyMs}ms · {health.toolCount ?? "?"} tools
                       </Text>
-                      {health.error ? <Text style={{ color: theme.colors.statusDanger, fontSize: 11 }}>{health.error.slice(0, 120)}</Text> : null}
+                      {health.error ? <Text style={{ color: theme.colors.statusDanger, fontSize: 11, flex: 1, minWidth: 160 }} numberOfLines={2}>{health.error}</Text> : null}
                     </View>
                     {health.instructions ? (
                       <View style={{ borderWidth: 1, borderColor: theme.colors.foregroundMuted + "20", borderRadius: 6, padding: 10, backgroundColor: theme.colors.foregroundMuted + "08" }}>
@@ -639,7 +784,7 @@ function McpModal({
                     ) : null}
                     {health.tools && health.tools.length > 0 ? (
                       <View style={{ borderWidth: 1, borderColor: theme.colors.foregroundMuted + "20", borderRadius: 6, padding: 10, backgroundColor: theme.colors.foregroundMuted + "08", gap: 8 }}>
-                        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
                           <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontWeight: "700", textTransform: "uppercase" }}>
                             Available Tools ({filteredTools.length}{filteredTools.length !== health.tools.length ? ` of ${health.tools.length}` : ""}) — tap to run
                           </Text>
@@ -661,13 +806,54 @@ function McpModal({
                             </Pressable>
                           ) : null}
                         </View>
+                        {selected === "gateway:hub" && gatewayData?.upstreamServers ? (
+                          <View style={{ gap: 4, marginTop: 2 }}>
+                            <Text style={{ color: theme.colors.foregroundMuted, fontSize: 10, textTransform: "uppercase", fontWeight: "600" }}>
+                              Filter by Sub-Server:
+                            </Text>
+                            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4 }}>
+                              <Pressable
+                                onPress={() => setGatewayToolSubServer("all")}
+                                style={{
+                                  paddingHorizontal: 8,
+                                  paddingVertical: 3,
+                                  borderRadius: 12,
+                                  backgroundColor: gatewayToolSubServer === "all" ? theme.colors.accent : theme.colors.foregroundMuted + "18",
+                                }}
+                              >
+                                <Text style={{ color: gatewayToolSubServer === "all" ? "#fff" : theme.colors.foregroundMuted, fontSize: 11, fontWeight: "600" }}>
+                                  All ({health.tools?.length ?? 0})
+                                </Text>
+                              </Pressable>
+                              {gatewayData.upstreamServers.filter((u) => u.toolsCount > 0).map((u) => (
+                                <Pressable
+                                  key={u.name}
+                                  onPress={() => setGatewayToolSubServer(u.name)}
+                                  style={{
+                                    paddingHorizontal: 8,
+                                    paddingVertical: 3,
+                                    borderRadius: 12,
+                                    backgroundColor: gatewayToolSubServer === u.name ? theme.colors.accent : theme.colors.foregroundMuted + "18",
+                                  }}
+                                >
+                                  <Text style={{ color: gatewayToolSubServer === u.name ? "#fff" : theme.colors.foregroundMuted, fontSize: 11, fontWeight: "600" }}>
+                                    {u.name} ({u.toolsCount})
+                                  </Text>
+                                </Pressable>
+                              ))}
+                            </View>
+                          </View>
+                        ) : null}
                         {filteredTools.length === 0 ? (
                           <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, fontStyle: "italic", paddingVertical: 4 }}>
                             No tools match &quot;{toolSearch}&quot;
                           </Text>
                         ) : (
                           <View style={{ gap: 6 }}>
-                            {filteredTools.map((toolName) => {
+                            {(selected === "gateway:hub" && gatewayToolSubServer === "all" && !toolSearch.trim()
+                              ? filteredTools.slice(0, 30)
+                              : filteredTools
+                            ).map((toolName) => {
                               const details = health?.toolDetails?.find((d) => d.name === toolName);
                               return (
                               <Pressable
@@ -682,25 +868,31 @@ function McpModal({
                                   backgroundColor: theme.colors.foregroundMuted + "10",
                                   borderWidth: 1,
                                   borderColor: theme.colors.foregroundMuted + "18",
+                                  gap: 8,
                                 }}
                               >
-                                <View style={{ flex: 1, gap: 2 }}>
-                                  <Text style={{ color: theme.colors.foreground, fontSize: 12, fontWeight: "600", fontFamily: "monospace" }}>
+                                <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+                                  <Text style={{ color: theme.colors.foreground, fontSize: 12, fontWeight: "600", fontFamily: "monospace" }} numberOfLines={1}>
                                     {toolName}
                                   </Text>
                                   {details?.description ? (
-                                    <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }} numberOfLines={1}>
+                                    <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }} numberOfLines={2}>
                                       {details.description}
                                     </Text>
                                   ) : null}
                                 </View>
-                                <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 4, backgroundColor: theme.colors.accent + "20" }}>
+                                <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 4, backgroundColor: theme.colors.accent + "20", flexShrink: 0 }}>
                                   <Icon name="Play" size={10} color={theme.colors.accent} />
                                   <Text style={{ color: theme.colors.accent, fontSize: 11, fontWeight: "600" }}>Run</Text>
                                 </View>
                               </Pressable>
                             );
                           })}
+                          {selected === "gateway:hub" && gatewayToolSubServer === "all" && !toolSearch.trim() && filteredTools.length > 30 ? (
+                            <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontStyle: "italic", textAlign: "center", paddingVertical: 4 }}>
+                              Showing 30 of {filteredTools.length} tools. Select a sub-server filter above or use search to view specific tools.
+                            </Text>
+                          ) : null}
                         </View>
                         )}
                       </View>
@@ -713,51 +905,400 @@ function McpModal({
             )}
           </View>
         ) : (
-          <View style={{ gap: 12, padding: 16 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, flex: 1 }} numberOfLines={1}>
-                {lastCheck ? `Last check ${lastCheck}` : "Never checked"}
-                {query.data?.provider ? ` · ${query.data.provider}` : ""}
-                {` · ${PLUGIN_VERSION}`}
-                {query.isFetching ? " • checking…" : ""}
-              </Text>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                <Pressable
-                  onPress={() => void runDiagnostics()}
+          <View>
+            {/* Top Navigation Tabs */}
+            <View
+              style={{
+                flexDirection: "row",
+                borderBottomWidth: 1,
+                borderBottomColor: theme.colors.foregroundMuted + "20",
+                paddingHorizontal: 16,
+                backgroundColor: theme.colors.foregroundMuted + "06",
+                gap: 8,
+              }}
+            >
+              <Pressable
+                onPress={() => setActiveTab("gateway")}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 12,
+                  borderBottomWidth: 2,
+                  borderBottomColor: activeTab === "gateway" ? theme.colors.accent : "transparent",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <Icon name="Server" size={13} color={activeTab === "gateway" ? theme.colors.accent : theme.colors.foregroundMuted} />
+                <Text
                   style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 4,
-                    paddingHorizontal: 8,
-                    paddingVertical: 6,
-                    borderRadius: 8,
-                    borderWidth: 1,
-                    borderColor: theme.colors.foregroundMuted,
+                    fontSize: 13,
+                    fontWeight: activeTab === "gateway" ? "700" : "500",
+                    color: activeTab === "gateway" ? theme.colors.foreground : theme.colors.foregroundMuted,
                   }}
                 >
-                  <Icon name="Activity" size={12} color={theme.colors.foregroundMuted} />
-                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>Diagnose</Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => void query.refetch()}
-                  disabled={query.isFetching}
+                  Gateway
+                </Text>
+                {gatewayData?.online ? (
+                  <View
+                    style={{
+                      paddingHorizontal: 6,
+                      paddingVertical: 1,
+                      borderRadius: 10,
+                      backgroundColor: theme.colors.statusSuccess + "22",
+                    }}
+                  >
+                    <Text style={{ fontSize: 10, fontWeight: "700", color: theme.colors.statusSuccess }}>
+                      {gatewayData.activeUpstreamServersCount}
+                    </Text>
+                  </View>
+                ) : (
+                  <View
+                    style={{
+                      paddingHorizontal: 5,
+                      paddingVertical: 1,
+                      borderRadius: 10,
+                      backgroundColor: theme.colors.foregroundMuted + "20",
+                    }}
+                  >
+                    <Text style={{ fontSize: 10, color: theme.colors.foregroundMuted }}>off</Text>
+                  </View>
+                )}
+              </Pressable>
+
+              <Pressable
+                onPress={() => setActiveTab("servers")}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 12,
+                  borderBottomWidth: 2,
+                  borderBottomColor: activeTab === "servers" ? theme.colors.accent : "transparent",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <Icon name="Plug" size={13} color={activeTab === "servers" ? theme.colors.accent : theme.colors.foregroundMuted} />
+                <Text
                   style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 6,
-                    paddingHorizontal: 10,
-                    paddingVertical: 6,
-                    borderRadius: 8,
-                    borderWidth: 1,
-                    borderColor: theme.colors.foregroundMuted,
-                    opacity: query.isFetching ? 0.6 : 1,
+                    fontSize: 13,
+                    fontWeight: activeTab === "servers" ? "700" : "500",
+                    color: activeTab === "servers" ? theme.colors.foreground : theme.colors.foregroundMuted,
                   }}
                 >
-                  <Icon name="RefreshCw" size={12} color={theme.colors.foregroundMuted} />
-                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>Refresh</Text>
-                </Pressable>
-              </View>
+                  Agent Servers
+                </Text>
+                <View
+                  style={{
+                    paddingHorizontal: 6,
+                    paddingVertical: 1,
+                    borderRadius: 10,
+                    backgroundColor: theme.colors.foregroundMuted + "20",
+                  }}
+                >
+                  <Text style={{ fontSize: 10, fontWeight: "700", color: theme.colors.foregroundMuted }}>
+                    {servers.length}
+                  </Text>
+                </View>
+              </Pressable>
             </View>
+
+            {activeTab === "gateway" ? (
+              <View style={{ gap: 14, padding: 16 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>
+                    Multiplexed MCP Fleet · {gatewayData?.online ? "Active" : "Offline"}
+                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                    <Pressable
+                      onPress={() => void refreshGateway()}
+                      disabled={gatewayLoading}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 4,
+                        paddingHorizontal: 8,
+                        paddingVertical: 5,
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: theme.colors.foregroundMuted,
+                        opacity: gatewayLoading ? 0.6 : 1,
+                      }}
+                    >
+                      <Icon name="RefreshCw" size={12} color={theme.colors.foregroundMuted} />
+                      <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>Refresh</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => void handleImportHost()}
+                      disabled={importingHost}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 4,
+                        paddingHorizontal: 8,
+                        paddingVertical: 5,
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: theme.colors.accent,
+                        backgroundColor: theme.colors.accent + "14",
+                        opacity: importingHost ? 0.6 : 1,
+                      }}
+                    >
+                      <Icon name="Download" size={12} color={theme.colors.accent} />
+                      <Text style={{ color: theme.colors.accent, fontSize: 12, fontWeight: "600" }}>
+                        {importingHost ? "Importing…" : "Import Host"}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setShowAddForm(!showAddForm)}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 4,
+                        paddingHorizontal: 8,
+                        paddingVertical: 5,
+                        borderRadius: 8,
+                        backgroundColor: theme.colors.accent,
+                      }}
+                    >
+                      <Icon name={showAddForm ? "X" : "Plus"} size={12} color="#fff" />
+                      <Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>
+                        {showAddForm ? "Cancel" : "Add Server"}
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+
+                {/* Gateway Status Banner */}
+                <View
+                  style={{
+                    padding: 12,
+                    borderRadius: 8,
+                    backgroundColor: gatewayData?.online ? theme.colors.statusSuccess + "10" : theme.colors.statusDanger + "10",
+                    borderWidth: 1,
+                    borderColor: gatewayData?.online ? theme.colors.statusSuccess + "30" : theme.colors.statusDanger + "30",
+                    gap: 8,
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <Text style={{ fontSize: 14 }}>{gatewayData?.online ? "🟢" : "🔴"}</Text>
+                      <Text style={{ color: theme.colors.foreground, fontSize: 14, fontWeight: "700" }}>
+                        MCP Gateway {gatewayData?.online ? "ONLINE" : "OFFLINE"}
+                      </Text>
+                    </View>
+                    <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>
+                      Control :37374 · Gateway :37373
+                    </Text>
+                  </View>
+
+                  {gatewayData?.online ? (
+                    <View style={{ gap: 4 }}>
+                      <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>Aggregated MCP Endpoint:</Text>
+                      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: theme.colors.foregroundMuted + "12", padding: 8, borderRadius: 6, gap: 6 }}>
+                        <Text selectable numberOfLines={1} style={{ color: theme.colors.foreground, fontSize: 12, fontFamily: "monospace", flex: 1 }}>
+                          {gatewayData.mcpEndpoint}
+                        </Text>
+                        <Pressable onPress={() => void copy(gatewayData.mcpEndpoint)} style={{ flexShrink: 0, padding: 2 }}>
+                          <Icon name="Copy" size={12} color={theme.colors.foregroundMuted} />
+                        </Pressable>
+                      </View>
+                      <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, marginTop: 2 }}>
+                        Fleet: {gatewayData.activeUpstreamServersCount} upstream servers active ({gatewayData.configuredServersCount} configured)
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>
+                      The MCP Gateway daemon is currently offline. You can start it via `.gateway/start.sh` or `npx mcp-hub`.
+                    </Text>
+                  )}
+                </View>
+
+                {/* Add Server Form */}
+                {showAddForm ? (
+                  <View style={{ padding: 12, borderRadius: 8, borderWidth: 1, borderColor: theme.colors.accent + "40", backgroundColor: theme.colors.foregroundMuted + "08", gap: 10 }}>
+                    <Text style={{ color: theme.colors.foreground, fontSize: 13, fontWeight: "600" }}>Add Upstream MCP Server</Text>
+                    <View style={{ gap: 4 }}>
+                      <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>Server Identifier</Text>
+                      <TextInput
+                        value={newServerName}
+                        onChangeText={setNewServerName}
+                        placeholder="e.g. context7 or my-custom-server"
+                        placeholderTextColor={theme.colors.foregroundMuted + "80"}
+                        autoCapitalize="none"
+                        style={{ borderWidth: 1, borderColor: theme.colors.foregroundMuted + "30", borderRadius: 6, padding: 8, color: theme.colors.foreground, fontSize: 12 }}
+                      />
+                    </View>
+                    <View style={{ gap: 4 }}>
+                      <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>HTTP / SSE Endpoint URL (optional)</Text>
+                      <TextInput
+                        value={newServerUrl}
+                        onChangeText={setNewServerUrl}
+                        placeholder="e.g. https://mcp.example.com/mcp"
+                        placeholderTextColor={theme.colors.foregroundMuted + "80"}
+                        autoCapitalize="none"
+                        style={{ borderWidth: 1, borderColor: theme.colors.foregroundMuted + "30", borderRadius: 6, padding: 8, color: theme.colors.foreground, fontSize: 12 }}
+                      />
+                    </View>
+                    <View style={{ gap: 4 }}>
+                      <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>Stdio CLI Command (optional)</Text>
+                      <TextInput
+                        value={newServerCmd}
+                        onChangeText={setNewServerCmd}
+                        placeholder="e.g. uvx duckduckgo-mcp-server"
+                        placeholderTextColor={theme.colors.foregroundMuted + "80"}
+                        autoCapitalize="none"
+                        style={{ borderWidth: 1, borderColor: theme.colors.foregroundMuted + "30", borderRadius: 6, padding: 8, color: theme.colors.foreground, fontSize: 12 }}
+                      />
+                    </View>
+                    <Pressable
+                      onPress={() => void handleAddServer()}
+                      disabled={addingServer}
+                      style={{
+                        backgroundColor: theme.colors.accent,
+                        padding: 8,
+                        borderRadius: 6,
+                        alignItems: "center",
+                        opacity: addingServer ? 0.6 : 1,
+                      }}
+                    >
+                      <Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>
+                        {addingServer ? "Adding Server…" : "Save Server"}
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+
+                {/* Connected Upstream Server Cards */}
+                <View style={{ gap: 8 }}>
+                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, textTransform: "uppercase", fontWeight: "600" }}>
+                    Connected Fleet Servers ({gatewayData?.upstreamServers?.length || 0})
+                  </Text>
+                  {gatewayData?.upstreamServers && gatewayData.upstreamServers.length > 0 ? (
+                    gatewayData.upstreamServers.map((s, idx) => (
+                      <View
+                        key={idx}
+                        style={{
+                          padding: 10,
+                          borderRadius: 8,
+                          borderWidth: 1,
+                          borderColor: theme.colors.foregroundMuted + "20",
+                          backgroundColor: theme.colors.foregroundMuted + "08",
+                          flexDirection: "row",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 8,
+                        }}
+                      >
+                        <View style={{ gap: 2, flex: 1, minWidth: 0 }}>
+                          <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                            <Text style={{ fontSize: 10 }}>
+                              {s.status === "connected" ? "🟢" : s.status === "connecting" ? "🟡" : "⚪"}
+                            </Text>
+                            <Text style={{ color: theme.colors.foreground, fontSize: 13, fontWeight: "600", flexShrink: 1 }} numberOfLines={1}>{s.name}</Text>
+                            {s.transport ? (
+                              <View style={{ paddingHorizontal: 4, paddingVertical: 1, borderRadius: 4, backgroundColor: theme.colors.foregroundMuted + "18" }}>
+                                <Text style={{ color: theme.colors.foregroundMuted, fontSize: 9, textTransform: "uppercase" }}>{s.transport}</Text>
+                              </View>
+                            ) : null}
+                          </View>
+                          <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }} numberOfLines={1}>
+                            Status: <Text style={{ color: s.status === "connected" ? theme.colors.statusSuccess : theme.colors.foregroundMuted }}>{s.status}</Text>
+                            {" · "}
+                            Tools: <Text style={{ color: theme.colors.foreground, fontWeight: "500" }}>{s.toolsCount}</Text>
+                            {s.uptime ? ` · Uptime: ${s.uptime}s` : ""}
+                          </Text>
+                        </View>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                          {s.toolsCount > 0 ? (
+                            <Pressable
+                              onPress={() => void openDetail(`gateway:${s.name}`)}
+                              style={{
+                                flexDirection: "row",
+                                alignItems: "center",
+                                gap: 4,
+                                paddingHorizontal: 8,
+                                paddingVertical: 5,
+                                borderRadius: 6,
+                                borderWidth: 1,
+                                borderColor: theme.colors.accent + "40",
+                                backgroundColor: theme.colors.accent + "14",
+                              }}
+                            >
+                              <Icon name="Wrench" size={11} color={theme.colors.accent} />
+                              <Text style={{ color: theme.colors.accent, fontSize: 11, fontWeight: "600" }}>
+                                Tools ({s.toolsCount})
+                              </Text>
+                            </Pressable>
+                          ) : null}
+                          <Pressable
+                            onPress={() => void handleRemoveServer(s.name)}
+                            style={{
+                              padding: 6,
+                              borderRadius: 6,
+                              borderWidth: 1,
+                              borderColor: theme.colors.statusDanger + "40",
+                              backgroundColor: theme.colors.statusDanger + "10",
+                            }}
+                          >
+                            <Icon name="Trash2" size={12} color={theme.colors.statusDanger} />
+                          </Pressable>
+                        </View>
+                      </View>
+                    ))
+                  ) : (
+                    <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, fontStyle: "italic" }}>
+                      No upstream servers connected to the gateway.
+                    </Text>
+                  )}
+                </View>
+              </View>
+            ) : (
+              <View style={{ gap: 12, padding: 16 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                  <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, flex: 1, minWidth: 120 }} numberOfLines={1}>
+                    {lastCheck ? `Last check ${lastCheck}` : "Never checked"}
+                    {query.data?.provider ? ` · ${query.data.provider}` : ""}
+                    {` · ${PLUGIN_VERSION}`}
+                    {query.isFetching ? " • checking…" : ""}
+                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                    <Pressable
+                      onPress={() => void runDiagnostics()}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 4,
+                        paddingHorizontal: 8,
+                        paddingVertical: 6,
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: theme.colors.foregroundMuted,
+                      }}
+                    >
+                      <Icon name="Activity" size={12} color={theme.colors.foregroundMuted} />
+                      <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>Diagnose</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => void query.refetch()}
+                      disabled={query.isFetching}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 6,
+                        paddingHorizontal: 10,
+                        paddingVertical: 6,
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: theme.colors.foregroundMuted,
+                        opacity: query.isFetching ? 0.6 : 1,
+                      }}
+                    >
+                      <Icon name="RefreshCw" size={12} color={theme.colors.foregroundMuted} />
+                      <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>Refresh</Text>
+                    </Pressable>
+                  </View>
+                </View>
             <TextInput
               value={search}
               onChangeText={setSearch}
@@ -798,9 +1339,9 @@ function McpModal({
                           style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: theme.colors.foregroundMuted + "18" }}
                         >
                           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1 }}>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1, minWidth: 0, flexWrap: "wrap" }}>
                               <Text style={{ color: statusColor, fontSize: 13, lineHeight: 14 }}>{statusDot}</Text>
-                              <Text style={{ color: theme.colors.foreground, fontWeight: "600" }}>{s.name}</Text>
+                              <Text style={{ color: theme.colors.foreground, fontWeight: "600", flexShrink: 1 }} numberOfLines={1}>{s.name}</Text>
                               <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, backgroundColor: theme.colors.foregroundMuted + "18", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
                                 {s.transport}
                               </Text>
@@ -808,7 +1349,7 @@ function McpModal({
                             </View>
 
                             {h ? (
-                              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 0 }}>
                                 <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>
                                   {h.latencyMs}ms{h.toolCount !== null ? ` · ${h.toolCount} tools` : ""}
                                 </Text>
@@ -833,7 +1374,9 @@ function McpModal({
             )}
           </View>
         )}
-      </Modal.Content>
+      </View>
+    )}
+  </Modal.Content>
     </Modal>
   );
 }

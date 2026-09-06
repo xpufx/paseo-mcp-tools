@@ -4,3 +4,5 @@ dist/
 .paseo/
 .DS_Store
 .env
+.gateway/
+experiments/

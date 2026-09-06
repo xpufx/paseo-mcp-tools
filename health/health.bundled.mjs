@@ -19730,6 +19730,12 @@ function withTimeout(p, ms, label) {
 }
 function transportFor(server) {
   if (server.url) {
+    if (server.transport === "sse") {
+      return {
+        transport: new SSEClientTransport(new URL(server.url)),
+        kind: "sse"
+      };
+    }
     try {
       return {
         transport: new StreamableHTTPClientTransport(new URL(server.url)),

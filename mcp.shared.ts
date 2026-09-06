@@ -149,3 +149,57 @@ export const diagnoseMcp = defineRpc({
     error: z.string().nullable(),
   }),
 });
+
+export const GatewayUpstreamServerSchema = z.object({
+  name: z.string(),
+  status: z.string(),
+  transport: z.string().optional(),
+  toolsCount: z.number(),
+  uptime: z.number().optional(),
+});
+
+export const gatewayStatus = defineRpc({
+  name: "mcp.gateway.status",
+  input: z.object({}),
+  output: z.object({
+    online: z.boolean(),
+    controlPort: z.number(),
+    hubPort: z.number(),
+    mcpEndpoint: z.string(),
+    eventsEndpoint: z.string(),
+    configuredServersCount: z.number(),
+    activeUpstreamServersCount: z.number(),
+    upstreamServers: z.array(GatewayUpstreamServerSchema),
+  }),
+});
+
+export const gatewayAddServer = defineRpc({
+  name: "mcp.gateway.add_server",
+  input: z.object({
+    name: z.string(),
+    url: z.string().optional(),
+    command: z.string().optional(),
+    args: z.array(z.string()).optional(),
+  }),
+  output: z.object({
+    ok: z.boolean(),
+    name: z.string(),
+    error: z.string().nullable().optional(),
+  }),
+});
+
+export const gatewayRemoveServer = defineRpc({
+  name: "mcp.gateway.remove_server",
+  input: z.object({ name: z.string() }),
+  output: z.object({ ok: z.boolean(), name: z.string() }),
+});
+
+export const gatewayImportHost = defineRpc({
+  name: "mcp.gateway.import_host",
+  input: z.object({}),
+  output: z.object({
+    ok: z.boolean(),
+    importedCount: z.number(),
+    totalServers: z.number(),
+  }),
+});

@@ -1,12 +1,13 @@
 import { readFile, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import type { McpServerSchema } from "./mcp.shared";
 import { z } from "zod";
 import { probeForProvider } from "./providers";
-import { paseo as paseoProbe } from "./providers/catalog";
+import { paseo as paseoProbe, gateway as gatewayProbe } from "./providers/catalog";
 import { PLUGIN_VERSION } from "./version";
 // Bundled health — SDK inlined so `paseo plugin add` doesn't need to resolve @modelcontextprotocol/sdk
 import { checkMany, checkMcpServerHealth, callMcpServerTool } from "./health/health.bundled.mjs";
@@ -159,7 +160,13 @@ export function createListMcpHandler() {
 
 export function createReadMcpHandler() {
   return async (input: { agentId: string; serverId: string }, context: PluginHandlerContext) => {
-    const { servers } = await discoverLiveServers(input.agentId, context);
+    let { servers } = await discoverLiveServers(input.agentId, context);
+    if (input.serverId.startsWith("gateway:")) {
+      try {
+        const gwRes = await gatewayProbe.probe({ agentId: input.agentId, provider: "gateway", cwd: "" });
+        servers = [...servers, ...gwRes.servers];
+      } catch {}
+    }
     const entry = servers.find((s) => s.id === input.serverId);
     if (!entry) throw new Error(`MCP server not found in this session: ${input.serverId}`);
     return {
@@ -175,12 +182,94 @@ export function createReadMcpHandler() {
 
 export function createHealthHandler() {
   return async (input: { agentId: string; serverId?: string }, context: PluginHandlerContext) => {
-    const { servers, error } = await discoverLiveServers(input.agentId, context);
+    let { servers, error } = await discoverLiveServers(input.agentId, context);
+    if (input.serverId?.startsWith("gateway:")) {
+      try {
+        const gwRes = await gatewayProbe.probe({ agentId: input.agentId, provider: "gateway", cwd: "" });
+        servers = [...servers, ...gwRes.servers];
+      } catch {}
+    }
     const targets = input.serverId ? servers.filter((s) => s.id === input.serverId) : servers;
     if (input.serverId && targets.length === 0) {
       throw new Error(`MCP server not found in this session: ${input.serverId}`);
     }
     const results = await checkMany(targets, { timeoutMs: 7000, includeTools: true });
+
+    // Filter gateway sub-servers to only their specific tools
+    const hubPort = process.env.MCP_GATEWAY_PORT || "37373";
+    try {
+      const gatewayHubRes = await fetch(`http://127.0.0.1:${hubPort}/api/servers`, { signal: AbortSignal.timeout(1200) });
+      if (gatewayHubRes.ok) {
+        const data = (await gatewayHubRes.json()) as {
+          servers?: Array<{
+            name: string;
+            status?: string;
+            error?: string;
+            capabilities?: { tools?: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }> };
+          }>;
+        };
+        if (data?.servers) {
+          const gatewayUpstreamMap = new Map<
+            string,
+            {
+              status?: string;
+              error?: string;
+              tools: string[];
+              toolDetails: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }>;
+            }
+          >();
+          for (const s of data.servers) {
+            const rawTools = s.capabilities?.tools ?? [];
+            gatewayUpstreamMap.set(s.name, {
+              status: s.status,
+              error: s.error,
+              tools: rawTools.map((t) => t.name),
+              toolDetails: rawTools.map((t) => ({
+                name: t.name,
+                description: t.description,
+                inputSchema: t.inputSchema,
+              })),
+            });
+          }
+
+          for (const res of results) {
+            const id = res.serverId;
+            let subName: string | null = null;
+            if (id.startsWith("gateway:") && id !== "gateway:hub") {
+              subName = id.slice("gateway:".length);
+            } else if (gatewayUpstreamMap.has(res.name) && res.tools && res.tools.length > 30) {
+              subName = res.name;
+            } else if (gatewayUpstreamMap.has(id) && res.tools && res.tools.length > 30) {
+              subName = id;
+            }
+
+            if (subName) {
+              const upstream = gatewayUpstreamMap.get(subName);
+              if (upstream) {
+                res.tools = upstream.tools;
+                res.toolDetails = upstream.toolDetails;
+                res.toolCount = upstream.tools.length;
+                if (upstream.status === "disconnected" || upstream.error) {
+                  res.status = "down";
+                  if (upstream.error) res.error = upstream.error;
+                } else if (upstream.status === "connecting") {
+                  res.status = "unknown";
+                } else if (upstream.status === "connected") {
+                  res.status = "healthy";
+                }
+              } else {
+                res.tools = [];
+                res.toolDetails = [];
+                res.toolCount = 0;
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // Gateway offline or timed out
+    }
+
     return { results, error };
   };
 }
@@ -190,15 +279,41 @@ export function createCallMcpToolHandler() {
     input: { agentId: string; serverId: string; toolName: string; arguments: Record<string, unknown> },
     context: PluginHandlerContext,
   ) => {
-    const { servers } = await discoverLiveServers(input.agentId, context);
+    let { servers } = await discoverLiveServers(input.agentId, context);
+    if (input.serverId.startsWith("gateway:")) {
+      try {
+        const gwRes = await gatewayProbe.probe({ agentId: input.agentId, provider: "gateway", cwd: "" });
+        servers = [...servers, ...gwRes.servers];
+      } catch {}
+    }
     const server = servers.find((s) => s.id === input.serverId);
     if (!server) {
       throw new Error(`MCP server not found in this session: ${input.serverId}`);
     }
+
+    let targetServer = server;
+    let targetToolName = input.toolName;
+    const hubPort = process.env.MCP_GATEWAY_PORT || "37373";
+
+    if (server.id.startsWith("gateway:")) {
+      targetServer = {
+        ...server,
+        transport: "sse",
+        url: `http://localhost:${hubPort}/mcp`,
+      };
+      if (server.id !== "gateway:hub") {
+        const subName = server.id.slice("gateway:".length);
+        const safeName = subName.replace(/[^a-zA-Z0-9]/g, "_");
+        if (!targetToolName.startsWith(`${safeName}__`)) {
+          targetToolName = `${safeName}__${targetToolName}`;
+        }
+      }
+    }
+
     try {
       const result = await (callMcpServerTool as (s: McpServer, t: string, a: Record<string, unknown>) => Promise<{ content: Array<{ type: string; text?: string; [key: string]: unknown }>; isError?: boolean }>)(
-        server,
-        input.toolName,
+        targetServer,
+        targetToolName,
         input.arguments,
       );
       return {
@@ -299,5 +414,120 @@ export function createDiagnoseMcpHandler() {
       discoveredServerCount,
       error: probeError,
     };
+  };
+}
+
+async function requestControl<T>(pathname: string, method = "GET", body?: unknown): Promise<T | null> {
+  const controlPort = process.env.MCP_CONTROL_PORT || "37374";
+  return new Promise((resolve) => {
+    try {
+      const dataStr = body ? JSON.stringify(body) : undefined;
+      const req = http.request(
+        {
+          hostname: "127.0.0.1",
+          port: controlPort,
+          path: pathname,
+          method,
+          headers: {
+            "Content-Type": "application/json",
+            ...(dataStr ? { "Content-Length": Buffer.byteLength(dataStr) } : {}),
+          },
+          timeout: 2500,
+        },
+        (res) => {
+          let chunks = "";
+          res.on("data", (c) => (chunks += c));
+          res.on("end", () => {
+            try {
+              resolve(JSON.parse(chunks) as T);
+            } catch {
+              resolve(null);
+            }
+          });
+        }
+      );
+      req.on("error", () => resolve(null));
+      req.on("timeout", () => {
+        req.destroy();
+        resolve(null);
+      });
+      if (dataStr) req.write(dataStr);
+      req.end();
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+export function createGatewayStatusHandler() {
+  return async () => {
+    const hubPort = parseInt(process.env.MCP_GATEWAY_PORT || "37373", 10);
+    const controlPort = parseInt(process.env.MCP_CONTROL_PORT || "37374", 10);
+
+    const res = await requestControl<{
+      ok: boolean;
+      online: boolean;
+      controlPort: number;
+      hubPort: number;
+      configuredServersCount: number;
+      activeUpstreamServersCount: number;
+      upstreamServers: Array<{ name: string; status: string; transport?: string; toolsCount: number; uptime?: number }>;
+      mcpEndpoint: string;
+      eventsEndpoint: string;
+    }>("/api/status");
+
+    if (!res || !res.ok) {
+      return {
+        online: false,
+        controlPort,
+        hubPort,
+        mcpEndpoint: `http://localhost:${hubPort}/mcp`,
+        eventsEndpoint: `http://localhost:${hubPort}/api/events`,
+        configuredServersCount: 0,
+        activeUpstreamServersCount: 0,
+        upstreamServers: [],
+      };
+    }
+
+    return {
+      online: res.online,
+      controlPort: res.controlPort,
+      hubPort: res.hubPort,
+      mcpEndpoint: res.mcpEndpoint,
+      eventsEndpoint: res.eventsEndpoint,
+      configuredServersCount: res.configuredServersCount,
+      activeUpstreamServersCount: res.activeUpstreamServersCount,
+      upstreamServers: res.upstreamServers || [],
+    };
+  };
+}
+
+export function createGatewayAddServerHandler() {
+  return async (input: { name: string; url?: string; command?: string; args?: string[] }) => {
+    const res = await requestControl<{ ok: boolean; name: string; error?: string }>("/api/config/add", "POST", input);
+    if (!res) {
+      return { ok: false, name: input.name, error: "Gateway control plane unreachable on :37374" };
+    }
+    return { ok: res.ok, name: res.name || input.name, error: res.error || null };
+  };
+}
+
+export function createGatewayRemoveServerHandler() {
+  return async (input: { name: string }) => {
+    const res = await requestControl<{ ok: boolean; name: string }>("/api/config/remove", "POST", input);
+    if (!res) {
+      return { ok: false, name: input.name };
+    }
+    return { ok: res.ok, name: res.name || input.name };
+  };
+}
+
+export function createGatewayImportHostHandler() {
+  return async () => {
+    const res = await requestControl<{ ok: boolean; importedCount: number; totalServers: number }>("/api/config/import", "POST", {});
+    if (!res) {
+      return { ok: false, importedCount: 0, totalServers: 0 };
+    }
+    return { ok: res.ok, importedCount: res.importedCount || 0, totalServers: res.totalServers || 0 };
   };
 }
