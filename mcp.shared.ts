@@ -83,6 +83,21 @@ export const checkMcpHealth = defineContract({
   }),
 });
 
+// Compact health snapshot persisted to PluginStorage after each health
+// check so other plugins can read fleet status without re-probing.
+export interface McpStatusSnapshot {
+  updatedAt: string; // ISO timestamp
+  total: number;
+  healthy: number;
+  degraded: number;
+  down: number;
+  servers: Array<{
+    name: string;
+    status: "healthy" | "degraded" | "down" | "unknown";
+    latencyMs: number;
+  }>;
+}
+
 export const callMcpTool = defineContract({
   name: "mcp.call_tool",
   description: "Executes a tool on an MCP server",
