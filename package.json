@@ -11,7 +11,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "devDependencies": {
-    "@getpaseo/client": "^0.7.0-beta.2",
+    "@getpaseo/plugin": "0.8.0-beta.1",
     "@tanstack/react-query": "^5.90.11",
     "@types/node": "^22.10.0",
     "@types/react": "~19.2.0",
@@ -19,7 +19,9 @@
     "react-native": "0.81.5",
     "typescript": "^5.9.3",
     "vitest": "^3.0.0",
-    "zod": "^4.4.3",
-    "@modelcontextprotocol/sdk": "^1.30.0"
+    "zod": "^4.4.3"
+  },
+  "dependencies": {
+    "paseo-plugin-helper": "^0.4.0-beta.2"
   }
 }

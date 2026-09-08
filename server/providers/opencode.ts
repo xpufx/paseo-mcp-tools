@@ -1,12 +1,9 @@
-import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
+import { safeSpawn } from "paseo-plugin-helper/server";
+import { stripAnsi } from "paseo-plugin-helper/shared";
 import type { McpProbe, ProbeContext, McpServer } from "../discovery/types";
 import { redact } from "../discovery/extract";
-
-function stripAnsi(s: string): string {
-  return s.replace(/\x1b\[[0-9;]*m/g, "");
-}
 
 function parseOpencodeMcpList(output: string, cfgPath: string): McpServer[] {
   const clean = stripAnsi(output);
@@ -45,96 +42,52 @@ export const opencodeProbe: McpProbe = {
   label: "opencode · live",
   matches: (provider) => provider.startsWith("opencode"),
   async probe(ctx: ProbeContext) {
-    const cfgPath = path.join(os.homedir(), ".config", "opencode", "opencode.jsonc");
-    return new Promise((resolve) => {
-      const child = spawn("opencode", ["mcp", "list"], {
-        cwd: ctx.cwd,
-        env: process.env,
-        timeout: 5000,
-      });
-      let out = "";
-      let err = "";
-      child.stdout.on("data", (d) => (out += d.toString()));
-      child.stderr.on("data", (d) => (err += d.toString()));
-      child.on("error", (e) =>
-        resolve({
+    const globalCfg = path.join(os.homedir(), ".config", "opencode", "opencode.jsonc");
+    const localCfg = path.join(ctx.cwd, "opencode.json");
+    const cfgPath = `${globalCfg} + ${localCfg} (cwd-merged)`;
+    const target = "opencode mcp list (CLI)";
+    let out: string;
+    try {
+      const res = await safeSpawn("opencode", ["mcp", "list"], { cwd: ctx.cwd, timeoutMs: 5000 });
+      out = res.stdout;
+      if (res.code !== 0 && !out) {
+        const msg = res.stderr || `opencode mcp list exited ${res.code}`;
+        return {
           servers: [],
-          error: e.message,
-          steps: [
-            {
-              target: "opencode mcp list (CLI)",
-              status: "error",
-              details: `Failed to spawn CLI: ${e.message}`,
-              contentPreview: null,
-            },
-          ],
-        }),
-      );
-      child.on("close", (code) => {
-        if (code !== 0 && !out) {
-          const msg = err || `opencode mcp list exited ${code}`;
-          resolve({
-            servers: [],
-            error: msg,
-            steps: [
-              {
-                target: "opencode mcp list (CLI)",
-                status: "error",
-                details: msg,
-                contentPreview: null,
-              },
-            ],
-          });
-          return;
-        }
-        try {
-          const servers = parseOpencodeMcpList(out, cfgPath);
-          resolve({
-            servers,
-            error: null,
-            steps: [
-              {
-                target: "opencode mcp list (CLI)",
-                status: "found",
-                details: `CLI returned ${servers.length} active server(s)`,
-                contentPreview: redact(out.slice(0, 1000)),
-              },
-            ],
-          });
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          resolve({
-            servers: [],
-            error: msg,
-            steps: [
-              {
-                target: "opencode mcp list (CLI)",
-                status: "error",
-                details: msg,
-                contentPreview: redact(out.slice(0, 1000)),
-              },
-            ],
-          });
-        }
-      });
-      setTimeout(() => {
-        try {
-          child.kill();
-        } catch {}
-        resolve({
-          servers: [],
-          error: "opencode mcp list timeout",
-          steps: [
-            {
-              target: "opencode mcp list (CLI)",
-              status: "error",
-              details: "Command timed out after 5000ms",
-              contentPreview: null,
-            },
-          ],
-        });
-      }, 5000);
-    });
+          error: msg,
+          steps: [{ target, status: "error" as const, details: msg, contentPreview: null }],
+        };
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return {
+        servers: [],
+        error: msg,
+        steps: [{ target, status: "error" as const, details: msg, contentPreview: null }],
+      };
+    }
+    try {
+      const servers = parseOpencodeMcpList(out, cfgPath);
+      return {
+        servers,
+        error: null,
+        steps: [
+          {
+            target,
+            status: "found" as const,
+            details: `CLI returned ${servers.length} active server(s)`,
+            contentPreview: redact(out.slice(0, 1000)),
+          },
+        ],
+      };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return {
+        servers: [],
+        error: msg,
+        steps: [{ target, status: "error" as const, details: msg, contentPreview: redact(out.slice(0, 1000)) }],
+      };
+    }
   },
 };
 

@@ -1,6 +1,8 @@
 {
   "id": "mcp-tools",
+  "requirements": { "paseo": ">=0.8.0" },
   "build": [
+    ["npm", "install"],
     ["node", "scripts/version.mjs"]
   ]
 }

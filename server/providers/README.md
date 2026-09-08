@@ -18,7 +18,7 @@ interface ProbeContext { agentId: string; provider: string; cwd: string; session
 interface ProbeResult { servers: McpServer[]; error?: string | null; steps?: DiagnosticStep[] }
 ```
 
-`McpServer` is `mcp.shared.ts: McpServerSchema` — `id, name, transport, source{kind,label,path}, command, url, description, hasSecrets, configPreview`.
+`McpServer` is `shared/mcp.ts: McpServerSchema` — `id, name, transport, source{kind,label,path}, command, url, description, hasSecrets, configPreview`.
 
 ## Adding a provider
 

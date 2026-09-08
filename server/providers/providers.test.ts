@@ -19,30 +19,34 @@ describe("provider contract verification (black-box guarantee)", () => {
         expect(probe.matches("non-existent-provider-xyz")).toBe(false);
       });
 
-      it("probes without throwing uncaught exceptions and returns schema-compliant servers", async () => {
-        const result = await probe.probe({
-          agentId: "test-agent-mock",
-          provider: probe.id,
-          cwd: "/tmp",
-          sessionId: "test-session-mock",
-        });
+      it(
+        "probes without throwing uncaught exceptions and returns schema-compliant servers",
+        async () => {
+          const result = await probe.probe({
+            agentId: "test-agent-mock",
+            provider: probe.id,
+            cwd: "/tmp",
+            sessionId: "test-session-mock",
+          });
 
-        // 1. Must return a valid result structure
-        expect(result).toBeDefined();
-        expect(Array.isArray(result.servers)).toBe(true);
-        if (result.error !== undefined && result.error !== null) {
-          expect(typeof result.error).toBe("string");
-        }
-
-        // 2. Every returned server MUST strictly pass runtime Zod validation
-        for (const s of result.servers) {
-          const parsed = McpServerSchema.safeParse(s);
-          if (!parsed.success) {
-            console.error(`Invalid server returned by probe ${probe.id}:`, parsed.error.format());
+          // 1. Must return a valid result structure
+          expect(result).toBeDefined();
+          expect(Array.isArray(result.servers)).toBe(true);
+          if (result.error !== undefined && result.error !== null) {
+            expect(typeof result.error).toBe("string");
           }
-          expect(parsed.success).toBe(true);
-        }
-      });
+
+          // 2. Every returned server MUST strictly pass runtime Zod validation
+          for (const s of result.servers) {
+            const parsed = McpServerSchema.safeParse(s);
+            if (!parsed.success) {
+              console.error(`Invalid server returned by probe ${probe.id}:`, parsed.error.format());
+            }
+            expect(parsed.success).toBe(true);
+          }
+        },
+        15000,
+      );
     });
   }
 

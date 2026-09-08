@@ -3,15 +3,22 @@ import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
-import type { McpServerSchema } from "../shared/mcp";
+import type { McpServerSchema, McpStatusSnapshot } from "../shared/mcp";
 import { z } from "zod";
 import { probeForProvider } from "./providers";
 import { paseo as paseoProbe } from "./providers/catalog";
 import { PLUGIN_VERSION } from "../shared/version";
-// Bundled health — SDK inlined so `paseo plugin add` doesn't need to resolve @modelcontextprotocol/sdk
-import { checkMany, checkMcpServerHealth, callMcpServerTool } from "./health/health.bundled.mjs";
+// Direct source import. The helper MCP client has zero runtime deps,
+// so no bundling step is needed for the daemon to resolve it.
+import { createPluginLogger, PluginStorage, redactSecrets } from "paseo-plugin-helper/server";
+import { checkMany, checkMcpServerHealth, callMcpServerTool } from "./health/health";
 
 type McpServer = z.infer<typeof McpServerSchema>;
+
+export const log = createPluginLogger("mcp-tools");
+
+// Shared health snapshot for other plugins to consume without re-probing.
+const statusStorage = new PluginStorage<McpStatusSnapshot>("mcp-tools", "status.json");
 
 const PASEO_TOOLS: Array<{ name: string; description: string; category: string }> = [
   { name: "create_agent", description: "Create an agent, optionally in a workspace", category: "Agents" },
@@ -35,9 +42,11 @@ const PASEO_TOOLS: Array<{ name: string; description: string; category: string }
 ];
 
 function redact(text: string): string {
-  return text
-    .replace(/"([^"]*(?:token|secret|key|password|auth)[^"]*)"\s*:\s*"[^"]*"/gi, '"$1": "•••"')
-    .replace(/(token|secret|key|password|auth)=[^\s"']+/gi, "$1=•••");
+  return redactSecrets(text, { mask: "•••" });
+}
+
+function redactConfig(def: unknown): string {
+  return JSON.stringify(redactSecrets(def, { mask: "•••" }), null, 2);
 }
 
 async function loadAgent(agentId: string, context: PluginHandlerContext) {
@@ -132,7 +141,7 @@ export async function discoverLiveServers(
         url,
         description: url ?? command ?? JSON.stringify(def).slice(0, 80),
         hasSecrets: Boolean(def.env || def.headers),
-        configPreview: redact(JSON.stringify(def, null, 2)),
+        configPreview: redactConfig(def),
       });
     }
 
@@ -141,9 +150,14 @@ export async function discoverLiveServers(
       if (servers.some((existing) => existing.name === s.name)) continue;
       servers.push(s);
     }
-    if (probeResult.error) error = probeResult.error;
+    if (probeResult.error) {
+      error = probeResult.error;
+      log.warn("Provider probe reported error", { provider: agent.provider, error });
+    }
+    log.info("Discovered live servers", { provider: agent.provider, count: servers.length });
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
+    log.error("Failed to discover live servers", { provider: agent.provider, error });
   }
 
   return { servers, error };
@@ -181,6 +195,18 @@ export function createHealthHandler() {
       throw new Error(`MCP server not found in this session: ${input.serverId}`);
     }
     const results = await checkMany(targets, { timeoutMs: 7000, includeTools: true });
+    const snapshot: McpStatusSnapshot = {
+      updatedAt: new Date().toISOString(),
+      total: results.length,
+      healthy: results.filter((r) => r.status === "healthy").length,
+      degraded: results.filter((r) => r.status === "degraded").length,
+      down: results.filter((r) => r.status === "down").length,
+      servers: results.map((r) => ({ name: r.name, status: r.status, latencyMs: r.latencyMs })),
+    };
+    await statusStorage.writeAsync(snapshot).catch((e) => {
+      log.warn("Failed to persist status snapshot", { error: e instanceof Error ? e.message : String(e) });
+    });
+
     return { results, error };
   };
 }
@@ -233,7 +259,7 @@ export function createDiagnoseMcpHandler() {
           target: `Paseo Agent Record (${input.agentId})`,
           status: "found",
           details: `Found record with ${names.length} MCP server(s): ${names.join(", ") || "none"}`,
-          contentPreview: redact(JSON.stringify(cfg.mcpServers ?? {}, null, 2)),
+          contentPreview: redactConfig(cfg.mcpServers ?? {}),
         });
       } else {
         steps.push({
