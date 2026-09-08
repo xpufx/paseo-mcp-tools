@@ -156,6 +156,8 @@ export const diagnoseMcp = defineContract({
 
 export const McpToolsSettingsSchema = z.object({
   healthPollingRate: z.enum(["1s", "2s", "5s", "10s", "15s", "30s", "60s", "5m", "paused"]).default("30s"),
+  gatewayInject: z.boolean().default(true),
+  gatewayUrl: z.string().default("http://127.0.0.1:37374/mcp"),
   flairRadius: z.enum(["sharp", "rounded", "pill"]).default("rounded"),
   flairDensity: z.enum(["compact", "comfortable", "spacious"]).default("comfortable"),
   flairSurface: z.enum(["flat", "tinted", "elevated"]).default("flat"),
@@ -169,3 +171,31 @@ export const mcpToolsSettingsContract = defineSettingsContract({
   schema: McpToolsSettingsSchema,
   description: "mcp-tools cache, polling and visual flair settings",
 });
+
+// Splits a gateway multiplexed tool name ("forgejo__list_branches")
+// into its upstream server and tool. Returns null for bare names.
+export function splitNamespacedTool(name: string): { server: string; tool: string } | null {
+  const sep = name.indexOf("__");
+  if (sep <= 0 || sep === name.length - 2) return null;
+  return { server: name.slice(0, sep), tool: name.slice(sep + 2) };
+}
+
+export interface McpHealthDigestData {
+  [key: string]: number | string;
+  healthy: number;
+  degraded: number;
+  down: number;
+  total: number;
+  updatedAt: string;
+}
+
+// Builds the daemon health digest payload shared by the timeline row
+// and the slash command verdict. Stable id lets replays replace it.
+export function buildHealthDigest(snapshot: {
+  healthy: number;
+  degraded: number;
+  down: number;
+  total: number;
+}): McpHealthDigestData {
+  return { ...snapshot, updatedAt: new Date().toISOString() };
+}

@@ -697,6 +697,27 @@ function McpModalContent({ agentId, close, theme, layout }: RenderModalProps) {
       </Card>
 
       <Card>
+        <Card.Header title="Gateway Injection" subtitle="Auto-register the gateway on agent.create" />
+        <FormRow label="Inject gateway" description="Add the gateway MCP server to every new agent">
+          <Toggle
+            value={settings.gatewayInject}
+            onValueChange={(val) => {
+              triggerHaptic("light");
+              updateSettings({ gatewayInject: val });
+            }}
+          />
+        </FormRow>
+        <FormRow label="Gateway endpoint" description="HTTP URL injected into new agents">
+          <TextInput
+            value={settings.gatewayUrl}
+            onChangeText={(text) => updateSettings({ gatewayUrl: text })}
+            placeholder="http://127.0.0.1:37374/mcp"
+            mono
+          />
+        </FormRow>
+      </Card>
+
+      <Card>
         <Card.Header title="Visual Flair" subtitle="Corner radius, density, surface and accent" />
         <FormRow label="Corner radius" description={`Active preset: "${settings.flairRadius}"`}>
           <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>

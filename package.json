@@ -12,6 +12,7 @@
   },
   "devDependencies": {
     "@getpaseo/plugin": "0.8.0-beta.1",
+    "@getpaseo/protocol": "^0.8.0-beta.1",
     "@tanstack/react-query": "^5.90.11",
     "@types/node": "^22.10.0",
     "@types/react": "~19.2.0",
