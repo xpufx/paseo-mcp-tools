@@ -156,6 +156,7 @@ export const diagnoseMcp = defineContract({
 
 export const McpToolsSettingsSchema = z.object({
   healthPollingRate: z.enum(["1s", "2s", "5s", "10s", "15s", "30s", "60s", "5m", "paused"]).default("30s"),
+  healthDigestRows: z.boolean().default(false),
   gatewayInject: z.boolean().default(true),
   gatewayUrl: z.string().default("http://127.0.0.1:37374/mcp"),
   flairRadius: z.enum(["sharp", "rounded", "pill"]).default("rounded"),

@@ -684,6 +684,15 @@ function McpModalContent({ agentId, close, theme, layout }: RenderModalProps) {
     <View style={{ gap: 12 }}>
       <Card>
         <Card.Header title="Health Polling" subtitle="Background refresh rate for server health" />
+        <FormRow label="Timeline digest rows" description="Append a health digest row to the agent timeline after each check">
+          <Toggle
+            value={settings.healthDigestRows}
+            onValueChange={(val) => {
+              triggerHaptic("light");
+              updateSettings({ healthDigestRows: val });
+            }}
+          />
+        </FormRow>
         <FormRow label="Polling rate" description="Paused disables background health polling">
           <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
             {(["1s", "2s", "5s", "10s", "15s", "30s", "60s", "5m", "paused"] as const).map((r) => (

@@ -3,8 +3,8 @@ import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
-import type { McpServerSchema, McpStatusSnapshot } from "../shared/mcp";
-import { buildHealthDigest } from "../shared/mcp";
+import type { McpServerSchema, McpStatusSnapshot, McpToolsSettings } from "../shared/mcp";
+import { McpToolsSettingsSchema, buildHealthDigest } from "../shared/mcp";
 import { z } from "zod";
 import { probeForProvider } from "./providers";
 import { paseo as paseoProbe } from "./providers/catalog";
@@ -20,6 +20,20 @@ export const log = createPluginLogger("mcp-tools");
 
 // Shared health snapshot for other plugins to consume without re-probing.
 const statusStorage = new PluginStorage<McpStatusSnapshot>("mcp-tools", "status.json");
+
+// Local settings reader. Kept separate from server/settings.ts to avoid
+// a module cycle, since that module imports the logger from here.
+const settingsReader = new PluginStorage<McpToolsSettings>("mcp-tools", "settings.json", {
+  schema: McpToolsSettingsSchema,
+});
+
+function healthDigestRowsEnabled(): boolean {
+  try {
+    return settingsReader.read().healthDigestRows === true;
+  } catch {
+    return false;
+  }
+}
 
 const PASEO_TOOLS: Array<{ name: string; description: string; category: string }> = [
   { name: "create_agent", description: "Create an agent, optionally in a workspace", category: "Agents" },
@@ -208,18 +222,20 @@ export function createHealthHandler() {
       log.warn("Failed to persist status snapshot", { error: e instanceof Error ? e.message : String(e) });
     });
 
-    await context.paseo.agents
-      .ref(input.agentId)
-      .timeline.append({
-        type: "plugin",
-        id: "mcp-health",
-        kind: "mcp-health-digest",
-        version: 1,
-        data: buildHealthDigest(snapshot),
-      })
-      .catch((e) => {
-        log.warn("Failed to append health digest row", { error: e instanceof Error ? e.message : String(e) });
-      });
+    if (healthDigestRowsEnabled()) {
+      await context.paseo.agents
+        .ref(input.agentId)
+        .timeline.append({
+          type: "plugin",
+          id: "mcp-health",
+          kind: "mcp-health-digest",
+          version: 1,
+          data: buildHealthDigest(snapshot),
+        })
+        .catch((e) => {
+          log.warn("Failed to append health digest row", { error: e instanceof Error ? e.message : String(e) });
+        });
+    }
 
     return { results, error };
   };

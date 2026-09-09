@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildHealthDigest, splitNamespacedTool } from "./mcp";
+import { buildHealthDigest, McpToolsSettingsSchema, splitNamespacedTool } from "./mcp";
 
 describe("splitNamespacedTool", () => {
   it("splits gateway multiplexed names", () => {
@@ -22,5 +22,11 @@ describe("buildHealthDigest", () => {
     const digest = buildHealthDigest({ healthy: 3, degraded: 1, down: 0, total: 4 });
     expect(digest).toMatchObject({ healthy: 3, degraded: 1, down: 0, total: 4 });
     expect(Number.isNaN(Date.parse(digest.updatedAt))).toBe(false);
+  });
+});
+
+describe("settings defaults", () => {
+  it("keeps digest rows off unless explicitly enabled", () => {
+    expect(McpToolsSettingsSchema.parse({}).healthDigestRows).toBe(false);
   });
 });
