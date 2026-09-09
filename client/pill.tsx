@@ -72,16 +72,14 @@ function McpPillBody(props: RenderPillProps) {
   const n = data?.servers.length ?? 0;
 
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 6 }}>
+    <View
+      accessibilityLabel={`MCP ${n > 0 ? n : ""} ${PLUGIN_ATTRIBUTION}`.trim()}
+      style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 6 }}
+    >
       <StatusDot variant={n > 0 ? "success" : "neutral"} />
       <Text numberOfLines={1} style={{ fontSize: 11, color: colors.foregroundMuted, flexShrink: 1 }}>
         {isCompact ? (n > 0 ? `${n}` : "MCP") : n > 0 ? `MCP ${n}` : "MCP"}
       </Text>
-      {isCompact ? null : (
-        <Text numberOfLines={1} style={{ fontSize: 10, color: colors.foregroundMuted, opacity: 0.7, flexShrink: 0 }}>
-          {PLUGIN_ATTRIBUTION}
-        </Text>
-      )}
     </View>
   );
 }
