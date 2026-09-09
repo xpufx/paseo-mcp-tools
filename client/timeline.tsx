@@ -1,7 +1,16 @@
 import type { PluginClientContext, PluginTimelineItemProps } from "@getpaseo/plugin/client";
 import { Text, View } from "react-native";
 import { z } from "zod";
-import { splitNamespacedTool } from "../shared/mcp";
+import { PLUGIN_ATTRIBUTION, splitNamespacedTool } from "../shared/mcp";
+import type { PluginTheme } from "@getpaseo/plugin";
+
+export function ViaMcpTools({ colors }: { colors: PluginTheme["colors"] }) {
+  return (
+    <Text style={{ color: colors.foregroundMuted, fontSize: 10 }}>
+      {PLUGIN_ATTRIBUTION}
+    </Text>
+  );
+}
 
 export const McpToolCallCardSchema = z.object({
   server: z.string(),
@@ -29,7 +38,7 @@ export const McpSlashResultCardSchema = z.object({
 
 export type McpSlashResultCardData = z.infer<typeof McpSlashResultCardSchema>;
 
-function McpToolCallCard({ item, theme }: PluginTimelineItemProps<McpToolCallCardData>) {
+export function McpToolCallCard({ item, theme }: PluginTimelineItemProps<McpToolCallCardData>) {
   const dot =
     item.data.status === "failed"
       ? theme.colors.statusDanger
@@ -46,12 +55,13 @@ function McpToolCallCard({ item, theme }: PluginTimelineItemProps<McpToolCallCar
         <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>
           MCP tool call {item.data.status}{item.data.phase === "streaming" ? " (running)" : ""}
         </Text>
+        <ViaMcpTools colors={theme.colors} />
       </View>
     </View>
   );
 }
 
-function McpHealthDigestCard({ item, theme }: PluginTimelineItemProps<McpHealthDigestCardData>) {
+export function McpHealthDigestCard({ item, theme }: PluginTimelineItemProps<McpHealthDigestCardData>) {
   const d = item.data;
   const summary = `${d.healthy} healthy / ${d.degraded} degraded / ${d.down} down of ${d.total}`;
   return (
@@ -62,11 +72,12 @@ function McpHealthDigestCard({ item, theme }: PluginTimelineItemProps<McpHealthD
       <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>
         Checked {d.updatedAt}
       </Text>
+      <ViaMcpTools colors={theme.colors} />
     </View>
   );
 }
 
-function McpSlashResultCard({ item, theme }: PluginTimelineItemProps<McpSlashResultCardData>) {
+export function McpSlashResultCard({ item, theme }: PluginTimelineItemProps<McpSlashResultCardData>) {
   return (
     <View style={{ gap: 4 }}>
       <Text style={{ color: theme.colors.foreground, fontSize: 13, fontWeight: "600" }}>
@@ -75,6 +86,7 @@ function McpSlashResultCard({ item, theme }: PluginTimelineItemProps<McpSlashRes
       <Text selectable style={{ color: theme.colors.foreground, fontSize: 12, fontFamily: "monospace" }}>
         {item.data.body}
       </Text>
+      <ViaMcpTools colors={theme.colors} />
     </View>
   );
 }

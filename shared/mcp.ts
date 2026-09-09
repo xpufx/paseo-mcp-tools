@@ -172,6 +172,10 @@ export const mcpToolsSettingsContract = defineSettingsContract({
   description: "mcp-tools cache, polling and visual flair settings",
 });
 
+// Short source label rendered on everything this plugin puts into
+// shared Paseo surfaces, so plugin output is never mistaken for core.
+export const PLUGIN_ATTRIBUTION = "via mcp-tools";
+
 // Splits a gateway multiplexed tool name ("forgejo__list_branches")
 // into its upstream server and tool. Returns null for bare names.
 export function splitNamespacedTool(name: string): { server: string; tool: string } | null {

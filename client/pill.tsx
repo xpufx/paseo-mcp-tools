@@ -40,6 +40,7 @@ import {
   callMcpTool,
   diagnoseMcp,
   mcpToolsSettingsContract,
+  PLUGIN_ATTRIBUTION,
   readMcp,
   type ToolInfo,
 } from "../shared/mcp";
@@ -76,6 +77,11 @@ function McpPillBody(props: RenderPillProps) {
       <Text numberOfLines={1} style={{ fontSize: 11, color: colors.foregroundMuted, flexShrink: 1 }}>
         {isCompact ? (n > 0 ? `${n}` : "MCP") : n > 0 ? `MCP ${n}` : "MCP"}
       </Text>
+      {isCompact ? null : (
+        <Text numberOfLines={1} style={{ fontSize: 10, color: colors.foregroundMuted, opacity: 0.7, flexShrink: 0 }}>
+          {PLUGIN_ATTRIBUTION}
+        </Text>
+      )}
     </View>
   );
 }
@@ -844,6 +850,11 @@ function McpModalContent({ agentId, close, theme, layout }: RenderModalProps) {
           }}
         />
       </ActionBar>
+      <View style={{ alignItems: "center", paddingVertical: 8 }}>
+        <Text style={{ fontSize: 10, color: colors.foregroundMuted, opacity: 0.7 }}>
+          {PLUGIN_ATTRIBUTION} {PLUGIN_VERSION}
+        </Text>
+      </View>
     </ModalBody>
     </PluginThemeProvider>
   );

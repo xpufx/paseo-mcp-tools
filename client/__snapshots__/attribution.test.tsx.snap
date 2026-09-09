@@ -1,0 +1,170 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`attribution labels on shared surfaces > labels the MCP tool call card 1`] = `
+<View
+  style={
+    {
+      "alignItems": "center",
+      "flexDirection": "row",
+      "gap": 8,
+    }
+  }
+>
+  <Text
+    style={
+      {
+        "color": "#00aa00",
+        "fontSize": 13,
+      }
+    }
+  >
+    ●
+  </Text>
+  <View
+    style={
+      {
+        "flex": 1,
+        "minWidth": 0,
+      }
+    }
+  >
+    <Text
+      numberOfLines={1}
+      style={
+        {
+          "color": "#000000",
+          "fontFamily": "monospace",
+          "fontSize": 13,
+          "fontWeight": "600",
+        }
+      }
+    >
+      forgejo
+      __
+      list_branches
+    </Text>
+    <Text
+      style={
+        {
+          "color": "#666666",
+          "fontSize": 11,
+        }
+      }
+    >
+      MCP tool call 
+      completed
+    </Text>
+    <ViaMcpTools
+      colors={
+        {
+          "foreground": "#000000",
+          "foregroundMuted": "#666666",
+          "statusDanger": "#ff0000",
+          "statusSuccess": "#00aa00",
+        }
+      }
+    />
+  </View>
+</View>
+`;
+
+exports[`attribution labels on shared surfaces > labels the health digest card 1`] = `
+<View
+  style={
+    {
+      "gap": 2,
+    }
+  }
+>
+  <Text
+    style={
+      {
+        "color": "#000000",
+        "fontSize": 13,
+        "fontWeight": "600",
+      }
+    }
+  >
+    MCP fleet health: 
+    3 healthy / 0 degraded / 1 down of 4
+  </Text>
+  <Text
+    style={
+      {
+        "color": "#666666",
+        "fontSize": 11,
+      }
+    }
+  >
+    Checked 
+    2026-09-06T00:00:00.000Z
+  </Text>
+  <ViaMcpTools
+    colors={
+      {
+        "foreground": "#000000",
+        "foregroundMuted": "#666666",
+        "statusDanger": "#ff0000",
+        "statusSuccess": "#00aa00",
+      }
+    }
+  />
+</View>
+`;
+
+exports[`attribution labels on shared surfaces > labels the slash result card 1`] = `
+<View
+  style={
+    {
+      "gap": 4,
+    }
+  }
+>
+  <Text
+    style={
+      {
+        "color": "#000000",
+        "fontSize": 13,
+        "fontWeight": "600",
+      }
+    }
+  >
+    MCP probe
+  </Text>
+  <Text
+    selectable={true}
+    style={
+      {
+        "color": "#000000",
+        "fontFamily": "monospace",
+        "fontSize": 12,
+      }
+    }
+  >
+    4 servers
+  </Text>
+  <ViaMcpTools
+    colors={
+      {
+        "foreground": "#000000",
+        "foregroundMuted": "#666666",
+        "statusDanger": "#ff0000",
+        "statusSuccess": "#00aa00",
+      }
+    }
+  />
+</View>
+`;
+
+exports[`attribution labels on shared surfaces > labels the via footer 1`] = `
+<Text
+  style={
+    {
+      "color": "#666666",
+      "fontSize": 10,
+    }
+  }
+>
+  via mcp-tools
+</Text>
+`;
