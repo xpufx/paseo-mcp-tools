@@ -13,6 +13,7 @@ export const McpServerSchema = z.object({
   transport: z.enum(["stdio", "http", "sse", "unknown"]),
   source: McpSourceSchema,
   command: z.string().nullable(),
+  args: z.array(z.string()).nullable().optional(),
   url: z.string().nullable(),
   description: z.string(),
   hasSecrets: z.boolean(),

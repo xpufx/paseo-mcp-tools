@@ -102,10 +102,14 @@ export function normalizeMcpServer(
           ? def.serverUrl
           : null;
 
-  // Extract command & args
+  // Extract command & args. Keep the structured args alongside the
+  // joined command string so dialers can spawn the exact argv.
   let command: string | null = null;
+  let argv: string[] | null = null;
   if (typeof def.command === "string") {
-    const args = Array.isArray(def.args) ? def.args.filter((a) => typeof a === "string").join(" ") : "";
+    const argList = Array.isArray(def.args) ? def.args.filter((a) => typeof a === "string") : [];
+    if (argList.length > 0) argv = argList;
+    const args = argList.join(" ");
     command = args ? `${def.command} ${args}` : def.command;
   } else if (typeof def.socket === "string") {
     command = def.socket;
@@ -152,6 +156,7 @@ export function normalizeMcpServer(
       path: sourcePath,
     },
     command,
+    args: argv,
     url,
     description,
     hasSecrets,

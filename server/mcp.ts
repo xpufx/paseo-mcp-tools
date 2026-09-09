@@ -147,12 +147,14 @@ export async function discoverLiveServers(
       const def = defRaw as Record<string, unknown>;
       const url = typeof def.url === "string" ? def.url : null;
       const command = typeof def.command === "string" ? def.command : null;
+      const defArgs = Array.isArray(def.args) ? def.args.filter((a) => typeof a === "string") : [];
       servers.push({
         id: `session:paseo:${name}`,
         name,
         transport: url ? "http" : command ? "stdio" : "unknown",
         source: { kind: "session", label: `session · ${agent.provider}`, path: `agent:${agentId}` },
         command,
+        args: defArgs.length > 0 ? defArgs : null,
         url,
         description: url ?? command ?? JSON.stringify(def).slice(0, 80),
         hasSecrets: Boolean(def.env || def.headers),

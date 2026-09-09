@@ -64,7 +64,13 @@ function dial(server: McpServer, timeoutMs: number): HelperClient | null {
     return McpClient.forHttp(server.url, { timeoutMs, clientInfo });
   }
   if (server.command) {
-    const { command, args } = splitCommand(server.command);
+    // Prefer the structured args when the server definition carries
+    // them. Falling back to splitting the command string would drop
+    // them and spawn a bare runtime that hangs until timeout.
+    const { command, args } =
+      server.args && server.args.length > 0
+        ? { command: server.command, args: server.args }
+        : splitCommand(server.command);
     return McpClient.forStdio(command, args, undefined, { timeoutMs, clientInfo });
   }
   return null;
