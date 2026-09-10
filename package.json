@@ -23,6 +23,6 @@
     "zod": "^4.4.3"
   },
   "dependencies": {
-    "paseo-plugin-helper": "^0.4.0-beta.4"
+    "paseo-plugin-helper": "^0.4.0-beta.6"
   }
 }
